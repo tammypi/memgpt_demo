@@ -59,3 +59,7 @@ python memgpt.py
 再次启动，记得牙齿的具体情况及预约的看诊时间：
 
 ![5](./images/5.png)
+
+再次启动并询问：
+
+![6](./images/6.png)
