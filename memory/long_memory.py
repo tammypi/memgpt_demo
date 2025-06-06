@@ -85,7 +85,7 @@ class LongMemory(object):
                     continue
         return list(set(keywords))
 
-    def search(self, keyword, limit=3):
+    def search(self, keyword, limit=10):
         # 使用 jieba 分词
         keyword = keyword.lower()
         tokens = self.extract_tokens(keyword)

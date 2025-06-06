@@ -73,9 +73,44 @@ class FunctionUtil(object):
             return f"[长期记忆区搜索结果]: 如下关键字无搜索结果： '{keyword}'"
         return f"[长期记忆区搜索结果] \n" + "\n".join(f" - {r}" for r in results)
 
+    def extract_long_term_memory(self, text):
+        # 匹配 [长期记忆区写入]: 后面所有的内容，包括“写入：”
+        pattern = r"\[长期记忆区写入\]:\s*写入：'([^']+)'"
+        matches = re.findall(pattern, text)
+        
+        # 如果没有匹配的内容，返回空字符串
+        if not matches:
+            return ""
+        
+        # 将所有匹配的内容拼接起来并返回
+        return ' '.join(matches)
+
     def long_memory_upload(self, keyword: str) -> str:
-        self.l_memory.upload(keyword)
-        return f"[长期记忆区写入]: 写入：'{keyword}'"
+        already_memorized = self.extract_long_term_memory(self.c_memory.show_context())
+        prompt = f"""
+        1.当前记忆，记作a
+        2.待写入事件，记作b
+        判断重复：
+        -如果 b 的内容已经在 a 中/或者存在语义相似内容，则表明 b 与 a 存在重复。输出compare_same。
+        -如果 b 没有出现在 a 中， 且不存在语义相似内容，则表示 b 不与 a 重复。输出compare_diffrent。
+
+        当前记忆：
+        {already_memorized}
+
+        待写入事件：
+        {keyword}
+
+        请输出是否存在重复：
+        1.a事件内容
+        2.b事件内容
+        3.答案
+        答案仅位于如下选项中： [compare_same｜compare_different]
+        """
+        answer = self.llm.chat(prompt)
+        if answer.find("compare_different") != -1:
+            self.l_memory.upload(keyword)
+            return f"[长期记忆区写入]: 写入：'{keyword}'"
+        return "Dr.Li想调用工具，实际无需调用工具"
 
     def current_memory_remove(self, keyword: str) -> str:
         before = len(self.c_memory.working_context)
@@ -93,7 +128,14 @@ class FunctionUtil(object):
         # 匹配函数名
         func_match = re.search(r'\[tool_name\](.*?)\[/tool_name\]', llm_output, re.DOTALL)
         if not func_match:
-            return "错误: 没有[tool_name]"
+            return """错误: 没有[tool_name]，请严格遵循格式调用工具：
+[answer]对用户进行自然地回复[/answer]
+[tool_name]工具名[/tool_name]
+[tool_params]
+    [tool_param]参数1[/tool_param]
+    [tool_param]参数2[/tool_param]
+[/tool_params]
+            """
 
         func_name = func_match.group(1).strip()
 
@@ -108,7 +150,7 @@ class FunctionUtil(object):
 
         try:
             result = func(*args)
-            self.c_memory.append_message(f"[Dr.Li] 工具调用结果： {result}")
+            self.c_memory.append_message(f"[Dr.Li] 已调用工具{func_name}, 工具调用结果： {result}")
             return result
         except Exception as e:
             return f"工具执行错误： '{func_name}': {e}"
