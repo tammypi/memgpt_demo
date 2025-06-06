@@ -16,7 +16,7 @@
 智能体可以调用的工具列表：
 
 - current_memory_append(text)：将重要的对话内容/事实（仅记录用户信息、健康医疗相关内容）存入当前记忆。
-- current_memory_replace(old, new)：替换当前记忆中与旧内容匹配的部分，适用于事实更新或修正。请确保 new 内容也是结构完备的完整表达。
+- current_memory_replace(old, new)：替换当前记忆中与旧内容匹配的部分，适用于事实更新或修正。
 - long_memory_search(keyword)：从长期记忆区中搜索包含指定关键字的记录。
 - long_memory_upload(text)：对当前对话或重要事件进行归纳总结，并存入长期记忆区。
 
