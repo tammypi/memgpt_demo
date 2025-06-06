@@ -75,7 +75,7 @@ class FunctionUtil(object):
 
     def long_memory_upload(self, keyword: str) -> str:
         self.l_memory.upload(keyword)
-        return f"[长期记忆区写入]: 写入： ({len(keyword)} 字符)"
+        return f"[长期记忆区写入]: 写入：'{keyword}'"
 
     def current_memory_remove(self, keyword: str) -> str:
         before = len(self.c_memory.working_context)
