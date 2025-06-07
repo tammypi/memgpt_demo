@@ -120,7 +120,7 @@ class LongMemory(object):
 
         cur.execute(query_sql, params)
         results = [
-            self.date_to_timezone_date(row[0]) + ": " + row[1]
+            self.date_to_timezone_date(row[0]) + ": " + row[1].split("关键词扩展")[0].strip()
             for row in cur.fetchall()
         ]
 
