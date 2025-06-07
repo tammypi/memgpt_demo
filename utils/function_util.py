@@ -93,6 +93,7 @@ class FunctionUtil(object):
         判断重复：
         -如果 b 的内容已经在 a 中/或者存在语义相似内容，则表明 b 与 a 存在重复。输出compare_same。
         -如果 b 没有出现在 a 中， 且不存在语义相似内容，则表示 b 不与 a 重复。输出compare_diffrent。
+        -如果 b 部分包含在 a中，或者存在部分语义相似内容，则提取出不重复部分。输出can_insert:[需要填入内容]。例如can_insert:2025年6月7日，客户智齿发炎。
 
         当前记忆：
         {already_memorized}
@@ -104,12 +105,16 @@ class FunctionUtil(object):
         1.a事件内容
         2.b事件内容
         3.答案
-        答案仅位于如下选项中： [compare_same｜compare_different]
+        答案仅位于如下选项中： [compare_same｜compare_different|can_insert:[需要填入内容]]
         """
         answer = self.llm.chat(prompt)
         if answer.find("compare_different") != -1:
             self.l_memory.upload(keyword)
             return f"长期记忆区写入'{keyword}'"
+        elif answer.find("can_insert:") != -1:
+            content = answer[answer.find("can_insert:")+len("can_insert:"):]
+            self.l_memory.upload(content)
+            return f"长期记忆区写入'{content}'"
         return "Dr.Li想调用工具long_memory_upload，实际本内容已经被该工具写入过，无需重复调用该工具"
 
     def current_memory_remove(self, keyword: str) -> str:
