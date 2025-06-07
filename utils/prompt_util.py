@@ -57,7 +57,7 @@ class PromptUtil(object):
 📌 如果用户的问题/对话基于当前记忆里就可以回答，那么你可以直接回答用户内容
 📌 如果用户问题/对话里包含某些需要记忆的关键信息，那么你应该调用current_memory_append存入当前记忆
 📌 如果用户问题/对话里包含对于记忆内容的更新，那么你应该调用current_memory_replace替换掉当前记忆里的部分内容
-📌 如果用户的问题/对话基于当前记忆里无法回答，那么你应该调用long_memory_search尝试从长期记忆区进行搜索
+📌 如果用户的问题/对话基于当前记忆里无法回答，或者用户开始质疑你的当前记忆，那么你应该调用long_memory_search尝试从长期记忆区进行搜索，并且以长期记忆的内容为准
 
 请务必严格按照以下格式和示例调用工具，任何格式上的偏差都会导致调用失败：
 [answer]对用户进行自然地回复[/answer]
@@ -124,7 +124,7 @@ class PromptUtil(object):
         return prompt
 
     @staticmethod
-    def build_tool_error_prompt(tool_rtn, current_memory):
+    def build_tool_error_prompt(llm_output, tool_rtn, current_memory):
         tool_instructions = """
 你是一位口腔医生，女性，姓李。你温柔、专业、耐心、负责。你拥有出色的记忆力，能够快速准确地回忆起用户此前说过的内容，并在对话中表现出体贴和共情的态度。
 
@@ -137,7 +137,13 @@ class PromptUtil(object):
 - 请不要重复之前的错误调用
 - 你必须进行重试，而不是直接回答用户内容
 
-请务必严格按照以下格式和示例调用工具，任何格式上的偏差都会导致调用失败：
+工具列表：
+- current_memory_append(text)
+- current_memory_replace(old, new)
+- long_memory_search(keyword)
+- long_memory_upload(text)
+
+请务必严格按照以下格式和示例调用工具，任何格式上的偏差都会导致调用失败；同时请严格比对参数个数是否与工具列表要求一致：
 [answer]对用户进行自然地回复[/answer]
 [tool_name]工具名[/tool_name]
 [tool_params]
@@ -151,8 +157,10 @@ class PromptUtil(object):
 
         prompt = (
             f"{tool_instructions.strip()}\n\n"
-            f"[当前记忆]\n{context_str.strip()}\n\n"
-            f"[工具执行结果]\n{tool_rtn.strip()}\n\n"
+            f"你尝试调用工具的动作：{llm_output}\n\n"
+            f"工具执行结果：{tool_rtn.strip()}\n\n"
+            #f"当前记忆：{context_str.strip()}\n\n"
             f"请你根据以上内容，重新调用工具以完成你的原始意图："
         )
+        print(prompt)
         return prompt

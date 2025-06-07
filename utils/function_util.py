@@ -178,18 +178,18 @@ class FunctionUtil(object):
             answer = self.parse_anwser(llm_output)
             tool_rtn = self.parse_and_execute(llm_output)
             while "错误" in tool_rtn:
-                tool_error_promt = PromptUtil.build_tool_error_prompt(tool_rtn, self.c_memory)
-                re_llm_output = self.llm.chat(tool_error_promt)
-                tool_rtn = self.parse_and_execute(re_llm_output)
-                #print("工具调用出现问题，正在重试...", re_llm_output, tool_rtn)
+                tool_error_promt = PromptUtil.build_tool_error_prompt(llm_output, tool_rtn, self.c_memory)
+                llm_output = self.llm.chat(tool_error_promt)
+                tool_rtn = self.parse_and_execute(llm_output)
+                print("工具调用出现问题，正在重试...", llm_output, tool_rtn)
             answer_rtn =  f"🦷 Dr.Li： {answer} \n🛠️ {tool_rtn}"
         elif llm_output.find("[tool_name]") != -1:
             tool_rtn = self.parse_and_execute(llm_output)
             while "错误" in tool_rtn:
-                tool_error_promt = PromptUtil.build_tool_error_prompt(tool_rtn, self.c_memory)
-                re_llm_output = self.llm.chat(tool_error_promt)
-                tool_rtn = self.parse_and_execute(re_llm_output)
-                #print("工具调用出现问题，正在重试...", re_llm_output, tool_rtn)
+                tool_error_promt = PromptUtil.build_tool_error_prompt(llm_output, tool_rtn, self.c_memory)
+                llm_output = self.llm.chat(tool_error_promt)
+                tool_rtn = self.parse_and_execute(llm_output)
+                print("工具调用出现问题，正在重试...", llm_output, tool_rtn)
             tool_rtn_prompt = PromptUtil.build_tool_rtn_prompt(tool_rtn, self.c_memory)
             tool_rtn_answer = self.llm.chat(tool_rtn_prompt)
             self.c_memory.append_message(f"[Dr.Li] {tool_rtn_answer}")
