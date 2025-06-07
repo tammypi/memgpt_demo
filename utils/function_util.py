@@ -70,12 +70,12 @@ class FunctionUtil(object):
     def long_memory_search(self, keyword: str) -> str:
         results = self.l_memory.search(keyword)
         if not results:
-            return f"[长期记忆区搜索结果]: 如下关键字无搜索结果： '{keyword}'"
+            return f"[长期记忆区搜索结果]: 如下关键字无搜索结果'{keyword}'"
         return f"[长期记忆区搜索结果] \n" + "\n".join(f" - {r}" for r in results)
 
     def extract_long_term_memory(self, text):
         # 匹配 [长期记忆区写入]: 后面所有的内容，包括“写入：”
-        pattern = r"\[长期记忆区写入\]:\s*写入：'([^']+)'"
+        pattern = r"长期记忆区写入'([^']+)'"
         matches = re.findall(pattern, text)
         
         # 如果没有匹配的内容，返回空字符串
@@ -109,8 +109,8 @@ class FunctionUtil(object):
         answer = self.llm.chat(prompt)
         if answer.find("compare_different") != -1:
             self.l_memory.upload(keyword)
-            return f"[长期记忆区写入]: 写入：'{keyword}'"
-        return "Dr.Li想调用工具，实际无需调用工具"
+            return f"长期记忆区写入'{keyword}'"
+        return "Dr.Li想调用工具long_memory_upload，实际本内容已经被该工具写入过，无需重复调用该工具"
 
     def current_memory_remove(self, keyword: str) -> str:
         before = len(self.c_memory.working_context)
