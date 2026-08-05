@@ -2,6 +2,8 @@
 
 这是一个支持长期记忆、文字与语音咨询的 AI 口腔医生演示。前台提供李医生真人形象、中文语音输入、等待状态动画，以及由阿里云百炼 TTS 和 VideoRetalk 生成的视频回答；后端保留原项目的当前记忆与 SQLite 长期记忆机制。整个数字人流程和全部视频素材只允许出现李医生，不使用患者或其他人物画面。
 
+![Dr.Li AI 口腔诊室界面](./images/dr-li-interface.png)
+
 ## 1.原理
 
 主要思路来自于论文《**MemGPT: Towards LLMs as Operating Systems**》
@@ -158,47 +160,3 @@ VideoRetalk 是整段异步视频生成服务，不是实时流式数字人。�
 - `GET /api/avatar/config`：返回启用状态、缺少配置和可用状态视频。
 - `POST /api/avatar/render`：执行 TTS、VideoRetalk 提交和结果轮询。
 - `GET /api/health`：`avatar_configured` 表示 Key 和母版素材是否齐全。
-
-## 4.原命令行启动方式
-
-1.pip install -r requirements.txt安装所需依赖
-
-2.通过环境变量配置兼容 OpenAI Chat Completions 的模型接口：
-
-```
-export LLM_API_URL="https://api.moonshot.cn/v1/chat/completions"
-export LLM_API_KEY="你的key"
-export LLM_MODEL="moonshot-v1-auto"
-```
-
-3.执行命令
-
-```
-python memgpt.py
-```
-
-## 5.原命令行效果
-
-例如，询问预约洗牙信息，会从长期记忆区搜索，此时没有相关信息；结束对话时，触发记忆持久化（智能体感受到信息关键，或者记忆内存存在压力时，也会触发记忆持久化）：
-
-![1](./images/1.png)
-
-再次启动智能体，此时已经有了相关的预约信息，可以更改预约，触发记忆更新：
-
-![2](./images/2.png)
-
-再次启动智能体，智能体知晓整个变更过程：
-
-![3](./images/3.png)
-
-切换场景，例如询问牙疼的问题：
-
-![4](./images/4.png)
-
-再次启动，记得牙齿的具体情况及预约的看诊时间：
-
-![5](./images/5.png)
-
-再次启动并询问：
-
-![6](./images/6.png)
