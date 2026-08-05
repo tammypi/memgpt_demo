@@ -13,7 +13,10 @@ else
   git -C "${MODEL_DIR}/CosyVoice" submodule update --init --recursive
 fi
 python -m venv "${ROOT_DIR}/.venvs/cosyvoice"
-"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install --upgrade pip setuptools wheel
+"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
+  --upgrade pip "setuptools<81" wheel
+"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
+  --no-build-isolation openai-whisper==20231117
 "${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
   -r "${MODEL_DIR}/CosyVoice/requirements.txt"
 modelscope download --model iic/CosyVoice2-0.5B \
@@ -23,7 +26,8 @@ if [[ ! -d "${MODEL_DIR}/MuseTalk/.git" ]]; then
   git clone https://github.com/TMElyralab/MuseTalk.git "${MODEL_DIR}/MuseTalk"
 fi
 python -m venv "${ROOT_DIR}/.venvs/musetalk"
-"${ROOT_DIR}/.venvs/musetalk/bin/python" -m pip install --upgrade pip setuptools wheel
+"${ROOT_DIR}/.venvs/musetalk/bin/python" -m pip install \
+  --upgrade pip "setuptools<81" wheel
 "${ROOT_DIR}/.venvs/musetalk/bin/python" -m pip install \
   -r "${MODEL_DIR}/MuseTalk/requirements.txt"
 huggingface-cli download TMElyralab/MuseTalk \
