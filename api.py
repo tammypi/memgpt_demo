@@ -7,10 +7,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from memgpt import MemGpt
-from avatar import AliyunVideoRetalkClient, AvatarServiceError
+from avatar import LocalAvatarClient, AvatarServiceError, OUTPUT_ROOT
 
 load_dotenv()
 
@@ -28,11 +29,13 @@ class AvatarRenderRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
-class AvatarRenderResponse(BaseModel):
-    video_url: str
-    audio_url: str | None = None
-    duration: float | None = None
-    task_id: str | None = None
+class AvatarJobResponse(BaseModel):
+    job_id: str
+    status: str
+    segments: list[dict]
+    segment_count: int
+    error: str | None = None
+    created_at: float
 
 
 app = FastAPI(title="Dr.Li 有记忆的口腔医生", version="1.0.0")
@@ -45,6 +48,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.mount("/avatar-files", StaticFiles(directory=OUTPUT_ROOT), name="avatar-files")
 
 doctor = MemGpt(
     os.getenv("LLM_API_URL", "https://api.moonshot.cn/v1/chat/completions"),
@@ -53,7 +57,7 @@ doctor = MemGpt(
 )
 doctor_lock = threading.Lock()
 
-avatar = AliyunVideoRetalkClient()
+avatar = LocalAvatarClient()
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 
@@ -83,7 +87,7 @@ def health():
 def avatar_config():
     return {
         "enabled": avatar.configured,
-        "provider": "aliyun-videoretalk",
+        "provider": "local-cosyvoice-musetalk",
         "missing_requirements": avatar.missing_requirements,
         "state_videos": {
             "idle": state_video_url("AVATAR_IDLE_VIDEO"),
@@ -106,15 +110,22 @@ async def chat(payload: ChatRequest):
     return ChatResponse(answer=answer, memory_notice=memory_notice)
 
 
-@app.post("/api/avatar/render", response_model=AvatarRenderResponse)
+@app.post("/api/avatar/render", response_model=AvatarJobResponse)
 async def avatar_render(payload: AvatarRenderRequest):
     if not avatar.configured:
         raise HTTPException(
             status_code=503,
-            detail=f"数字人配置不完整：{', '.join(avatar.missing_requirements)}",
+            detail=f"本地数字人尚未安装：{', '.join(avatar.missing_requirements)}",
         )
     try:
-        result = await asyncio.to_thread(avatar.render, payload.text.strip())
-        return AvatarRenderResponse(**result)
+        return AvatarJobResponse(**avatar.create_job(payload.text.strip()))
     except (AvatarServiceError, ValueError, TypeError) as error:
         raise HTTPException(status_code=502, detail=f"数字人渲染失败：{error}") from error
+
+
+@app.get("/api/avatar/jobs/{job_id}", response_model=AvatarJobResponse)
+def avatar_job(job_id: str):
+    try:
+        return AvatarJobResponse(**avatar.get_job(job_id))
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="数字人任务不存在") from error

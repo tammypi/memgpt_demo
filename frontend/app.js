@@ -1,7 +1,6 @@
 const API_BASE = localStorage.getItem("drLiApiBase") || "http://localhost:8000";
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const portrait = document.querySelector("#portrait");
-const mouth = portrait.querySelector(".mouth");
 const stateVideo = document.querySelector("#stateVideo");
 const avatarVideo = document.querySelector("#avatarVideo");
 const statusText = document.querySelector("#statusText");
@@ -15,7 +14,6 @@ const speechHint = document.querySelector("#speechHint");
 const soundToggle = document.querySelector("#soundToggle");
 let voiceEnabled = true;
 let recognition;
-let mouthTimer;
 let avatarEnabled = false;
 let renderSequence = 0;
 let stateVideos = {};
@@ -26,61 +24,12 @@ function setDoctorState(state, expression = "warm") {
   portrait.classList.add(`expression-${expression}`);
   statusText.textContent = state === "speaking" ? "正在回答" : state === "listening" ? "正在聆听" : state === "thinking" ? "正在思考" : "在线候诊";
   soundWave.classList.toggle("active", state === "speaking");
-  if (state !== "speaking") mouth.style.setProperty("--open", 0);
 }
 
 function inferExpression(text) {
   if (/疼|痛|肿|出血|担心|严重|急|不舒服/.test(text)) return "concerned";
   if (/很好|放心|不用担心|没问题|恢复|开心|恭喜/.test(text)) return "happy";
   return "warm";
-}
-
-function animateMouth(active) {
-  clearInterval(mouthTimer);
-  if (!active) {
-    mouth.style.setProperty("--open", 0);
-    return;
-  }
-  mouthTimer = setInterval(() => {
-    mouth.style.setProperty("--open", (0.24 + Math.random() * 0.76).toFixed(2));
-  }, 85);
-}
-
-function selectChineseVoice() {
-  const voices = speechSynthesis.getVoices();
-  return voices.find(voice => /zh-CN/i.test(voice.lang) && /female|xiaoxiao|huihui|tingting|女/i.test(voice.name))
-    || voices.find(voice => /zh-CN/i.test(voice.lang))
-    || voices.find(voice => /^zh/i.test(voice.lang));
-}
-
-function speak(text) {
-  stopStateVideo();
-  if (!voiceEnabled || !("speechSynthesis" in window)) {
-    setDoctorState("", inferExpression(text));
-    playStateVideo("idle");
-    return;
-  }
-  speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "zh-CN";
-  utterance.rate = 0.96;
-  utterance.pitch = 1.08;
-  const voice = selectChineseVoice();
-  if (voice) utterance.voice = voice;
-  utterance.onstart = () => { setDoctorState("speaking", inferExpression(text)); animateMouth(true); };
-  utterance.onboundary = event => {
-    if (event.name === "word" || event.name === "sentence") {
-      mouth.style.setProperty("--open", (0.35 + Math.random() * 0.65).toFixed(2));
-    }
-  };
-  utterance.onpause = () => animateMouth(false);
-  utterance.onresume = () => animateMouth(true);
-  utterance.onend = utterance.onerror = () => {
-    animateMouth(false);
-    setDoctorState("", inferExpression(text));
-    playStateVideo("idle");
-  };
-  speechSynthesis.speak(utterance);
 }
 
 function stopAvatarVideo() {
@@ -138,7 +87,8 @@ async function presentAnswer(text, revealAnswer) {
   };
   if (!avatarEnabled || !voiceEnabled) {
     reveal();
-    speak(text);
+    setDoctorState("", inferExpression(text));
+    playStateVideo("idle");
     return;
   }
   setDoctorState("thinking", inferExpression(text));
@@ -151,56 +101,64 @@ async function presentAnswer(text, revealAnswer) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "数字人渲染失败");
-    if (currentSequence !== renderSequence) {
-      reveal();
-      return;
+    reveal();
+    let played = 0;
+    let job = data;
+    while (currentSequence === renderSequence) {
+      while (played < job.segments.length) {
+        await playAvatarSegment(job.segments[played].video_url, text, currentSequence);
+        played += 1;
+      }
+      if (job.status === "succeeded") break;
+      if (job.status === "failed") throw new Error(job.error || "本地数字人生成失败");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const poll = await fetch(`${API_BASE}/api/avatar/jobs/${job.job_id}`);
+      job = await poll.json();
+      if (!poll.ok) throw new Error(job.detail || "获取数字人任务失败");
     }
-    avatarVideo.src = data.video_url;
-    await new Promise((resolve, reject) => {
-      const handleReady = () => {
-        avatarVideo.oncanplay = null;
-        avatarVideo.onerror = null;
-        resolve();
-      };
-      avatarVideo.oncanplay = handleReady;
-      avatarVideo.onerror = () => reject(new Error("回答视频加载失败"));
-      avatarVideo.load();
-      if (avatarVideo.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) handleReady();
-    });
-    if (currentSequence !== renderSequence) {
-      stopAvatarVideo();
-      reveal();
-      return;
-    }
-    avatarVideo.onended = () => {
-      stopAvatarVideo();
-      setDoctorState("", inferExpression(text));
-      playStateVideo("idle");
-    };
-    avatarVideo.onerror = () => {
-      stopAvatarVideo();
-      speak(text);
-    };
-    stopStateVideo();
-    portrait.classList.add("answer-video-active");
-    setDoctorState("speaking", inferExpression(text));
-    try {
-      await avatarVideo.play();
-      reveal();
-    } catch (error) {
-      stopAvatarVideo();
-      reveal();
-      speak(text);
-    }
+    stopAvatarVideo();
+    setDoctorState("", inferExpression(text));
+    playStateVideo("idle");
   } catch (error) {
     if (currentSequence === renderSequence) {
       stopAvatarVideo();
       reveal();
-      speak(text);
+      setDoctorState("", "concerned");
+      playStateVideo("idle");
+      console.error(error);
     } else {
       reveal();
     }
   }
+}
+
+async function playAvatarSegment(url, text, sequence) {
+  if (sequence !== renderSequence) return;
+  stopAvatarVideo();
+  avatarVideo.src = `${API_BASE}${url}`;
+  await new Promise((resolve, reject) => {
+    avatarVideo.oncanplay = resolve;
+    avatarVideo.onerror = () => reject(new Error("数字人片段加载失败"));
+    avatarVideo.load();
+  });
+  if (sequence !== renderSequence) return;
+  stopStateVideo();
+  portrait.classList.add("answer-video-active");
+  setDoctorState("speaking", inferExpression(text));
+  await avatarVideo.play();
+  await new Promise((resolve, reject) => {
+    const cancelTimer = setInterval(() => {
+      if (sequence !== renderSequence) finish(resolve);
+    }, 100);
+    const finish = callback => {
+      clearInterval(cancelTimer);
+      avatarVideo.onended = null;
+      avatarVideo.onerror = null;
+      callback();
+    };
+    avatarVideo.onended = () => finish(resolve);
+    avatarVideo.onerror = () => finish(() => reject(new Error("数字人片段播放失败")));
+  });
 }
 
 function addMessage(role, text) {
@@ -228,7 +186,6 @@ async function sendMessage(message) {
   if (!text || sendButton.disabled) return;
   renderSequence += 1;
   stopAvatarVideo();
-  speechSynthesis?.cancel();
   addMessage("user", text);
   input.value = "";
   input.style.height = "auto";
@@ -266,7 +223,6 @@ function setupRecognition() {
   recognition.interimResults = true;
   recognition.continuous = false;
   recognition.onstart = () => {
-    speechSynthesis?.cancel();
     micButton.classList.add("recording");
     speechHint.hidden = false;
     setDoctorState("listening", "warm");
@@ -306,13 +262,11 @@ soundToggle.addEventListener("click", () => {
   if (!voiceEnabled) {
     renderSequence += 1;
     stopAvatarVideo();
-    speechSynthesis?.cancel();
-    animateMouth(false);
     setDoctorState("", "warm");
     playStateVideo("idle");
   }
 });
-window.addEventListener("beforeunload", () => { stopAvatarVideo(); stopStateVideo(); speechSynthesis?.cancel(); });
+window.addEventListener("beforeunload", () => { stopAvatarVideo(); stopStateVideo(); });
 fetch(`${API_BASE}/api/avatar/config`)
   .then(response => response.ok ? response.json() : { enabled: false })
   .then(config => {
@@ -322,4 +276,3 @@ fetch(`${API_BASE}/api/avatar/config`)
   })
   .catch(() => { avatarEnabled = false; });
 setupRecognition();
-speechSynthesis?.getVoices();

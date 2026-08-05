@@ -26,11 +26,8 @@ button { cursor: pointer; }
 .state-video { z-index: 1; }
 .avatar-video { z-index: 2; }
 .portrait.state-video-active .state-video, .portrait.answer-video-active .avatar-video { opacity: 1; }
-.portrait.state-video-active .mouth, .portrait.answer-video-active .mouth { display: none; }
 .portrait::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 100px rgba(8,62,55,.16); }
 .face-light { position: absolute; left: 28%; top: 18%; width: 45%; height: 42%; border-radius: 50%; opacity: 0; background: radial-gradient(circle, rgba(255,239,223,.22), transparent 66%); transition: opacity .4s; }
-.mouth { --open: 0; position: absolute; z-index: 2; left: 48.55%; top: 47.25%; width: 7.1%; height: calc(1.25% + var(--open) * 2.3%); overflow: hidden; border-radius: 18% 18% 50% 50%; opacity: calc(var(--open) * .94); transform: translate(-50%, -50%) scaleX(calc(1 - var(--open) * .12)); transform-origin: center top; background: #5e2524; box-shadow: inset 0 1px 2px rgba(0,0,0,.42); transition: height 70ms linear, opacity 90ms linear; }
-.mouth span { position: absolute; left: 17%; right: 17%; bottom: 4%; height: 28%; border-radius: 50%; background: #c96f72; }
 .portrait.speaking { animation: breathe 3.6s ease-in-out infinite; }
 .portrait.listening { transform: scale(1.018) rotate(-.25deg); filter: brightness(1.025); }
 .portrait.thinking { transform: scale(1.008) translateY(-2px); filter: saturate(.78); }
@@ -87,5 +84,4 @@ button { cursor: pointer; }
   .doctor-identity { bottom: 25px; }
   .consultation { min-height: 54vh; padding: 26px 20px 18px; }
   .messages { max-height: 44vh; }
-  .mouth { display: none; }
 }

@@ -4,6 +4,14 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
+  "runArgs": ["--gpus=all"],
+  "hostRequirements": {
+    "gpu": true
+  },
+  "containerEnv": {
+    "NVIDIA_VISIBLE_DEVICES": "all",
+    "NVIDIA_DRIVER_CAPABILITIES": "compute,utility"
+  },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/memgpt_demo,type=bind,consistency=cached",
   "workspaceFolder": "/workspace/memgpt_demo",
   "updateRemoteUserUID": true,
@@ -17,7 +25,7 @@
     "vscode": {
       "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
         "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
