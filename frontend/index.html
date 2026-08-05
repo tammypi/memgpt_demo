@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#edf8f6">
+  <title>李医生 · AI 口腔诊室</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="clinic-shell">
+    <section class="doctor-stage" aria-label="李医生视频形象">
+      <header class="brand"><span class="tooth">◆</span><span>齿语诊室</span></header>
+      <div class="status-pill"><i></i><span id="statusText">在线候诊</span></div>
+      <div id="portrait" class="portrait expression-warm">
+        <img src="assets/doctor-li.png" alt="中国女口腔医生李医生">
+        <div class="face-light"></div>
+        <div class="mouth" aria-hidden="true"><span></span></div>
+      </div>
+      <div class="doctor-identity">
+        <p class="eyebrow">AI ORAL HEALTH ASSISTANT</p>
+        <h1>李医生 <span>口腔健康顾问</span></h1>
+        <p>温柔倾听，记得每一次关心</p>
+      </div>
+      <div class="sound-wave" id="soundWave" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </section>
+
+    <section class="consultation">
+      <div class="consult-header">
+        <div><p class="eyebrow">PRIVATE CONSULTATION</p><h2>今天牙齿感觉怎么样？</h2></div>
+        <button id="soundToggle" class="icon-button active" title="切换医生语音" aria-label="切换医生语音">♫</button>
+      </div>
+      <div id="messages" class="messages" aria-live="polite">
+        <article class="message doctor-message">
+          <span class="mini-avatar"><img src="assets/doctor-li.png" alt=""></span>
+          <div><small>李医生 · 刚刚</small><p>你好，我是李医生。你可以直接告诉我哪里不舒服，也可以点下方麦克风跟我说。我会记住与你口腔健康有关的重要信息。</p></div>
+        </article>
+      </div>
+      <div id="speechHint" class="speech-hint" hidden><span></span>正在聆听，请说话…</div>
+      <form id="chatForm" class="composer">
+        <textarea id="messageInput" rows="1" maxlength="4000" placeholder="描述你的症状，或直接按住麦克风说话…" aria-label="咨询内容"></textarea>
+        <div class="composer-actions">
+          <button id="micButton" type="button" class="mic-button" aria-label="开始语音输入"><span>●</span></button>
+          <button id="sendButton" type="submit" class="send-button">发送 <span>↗</span></button>
+        </div>
+      </form>
+      <p class="disclaimer">AI 建议仅供健康咨询参考，急症或严重不适请及时前往正规医疗机构。</p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

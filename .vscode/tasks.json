@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dr.Li: 后端",
+      "type": "shell",
+      "command": "python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "dr-li-backend",
+        "pattern": { "regexp": ".*" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Uvicorn running.*|.*Started reloader process.*",
+          "endsPattern": ".*Application startup complete.*"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Dr.Li: 前端",
+      "type": "shell",
+      "command": "python -m http.server 5173 --directory frontend --bind 0.0.0.0",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "dr-li-frontend",
+        "pattern": { "regexp": ".*" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Serving HTTP.*",
+          "endsPattern": ".*Serving HTTP.*"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Dr.Li: 启动前后台",
+      "dependsOrder": "parallel",
+      "dependsOn": ["Dr.Li: 后端", "Dr.Li: 前端"],
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "Dr.Li AI 口腔诊室",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/memgpt_demo,type=bind,consistency=cached",
+  "workspaceFolder": "/workspace/memgpt_demo",
+  "updateRemoteUserUID": true,
+  "forwardPorts": [8000, 5173],
+  "portsAttributes": {
+    "8000": { "label": "Dr.Li 后端 API" },
+    "5173": { "label": "Dr.Li 前端", "onAutoForward": "openBrowser" }
+  },
+  "postCreateCommand": "python -m pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}

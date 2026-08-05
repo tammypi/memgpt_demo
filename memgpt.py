@@ -20,6 +20,13 @@ class MemGpt(object):
     def print_separator(self):
         print("=" * 50)
 
+    def respond(self, user_input):
+        answer, memory_rtn = self.functions.ope_llm_respond(user_input)
+        answer = answer.removeprefix("🦷 Dr.Li： ").strip()
+        if "\n🛠️" in answer:
+            answer = answer.split("\n🛠️", 1)[0].strip()
+        return answer, memory_rtn
+
     def run(self):
         print("欢迎来到 🦷 Dr.Li 的 AI 口腔诊所！我可以记住你说过的事，也能帮你回忆过去 🤖")
         print("请输入内容（输入 'exit' 退出）：")
@@ -31,17 +38,19 @@ class MemGpt(object):
             if user_input.lower() in {"exit", "quit"}:
                 break
             
-            answer, memory_rtn = self.functions.ope_llm_respond(user_input)
+            answer, memory_rtn = self.respond(user_input)
             print(answer)
             if memory_rtn:
                 print(memory_rtn)
             print()
 
 if __name__ == '__main__':
-    api_url = "https://api.moonshot.cn/v1/chat/completions"
-    api_key = "[你的key]"
-    model_name = "moonshot-v1-auto"
+    api_url = os.getenv("LLM_API_URL", "https://api.moonshot.cn/v1/chat/completions")
+    api_key = os.getenv("LLM_API_KEY", "")
+    model_name = os.getenv("LLM_MODEL", "moonshot-v1-auto")
+
+    if not api_key:
+        raise SystemExit("请先设置环境变量 LLM_API_KEY")
 
     memgpt = MemGpt(api_url, api_key, model_name)
     memgpt.run()
-    

@@ -26,7 +26,7 @@ class ChatUtil(object):
         }
 
         try:
-            response = requests.post(self.api_url, json=data, headers=headers, timeout=15, verify=False)
+            response = requests.post(self.api_url, json=data, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
             return result['choices'][0]['message']['content'].strip()
