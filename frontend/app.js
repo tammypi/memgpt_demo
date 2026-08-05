@@ -2,6 +2,8 @@ const API_BASE = localStorage.getItem("drLiApiBase") || "http://localhost:8000";
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const portrait = document.querySelector("#portrait");
 const mouth = portrait.querySelector(".mouth");
+const stateVideo = document.querySelector("#stateVideo");
+const avatarVideo = document.querySelector("#avatarVideo");
 const statusText = document.querySelector("#statusText");
 const soundWave = document.querySelector("#soundWave");
 const messages = document.querySelector("#messages");
@@ -14,9 +16,14 @@ const soundToggle = document.querySelector("#soundToggle");
 let voiceEnabled = true;
 let recognition;
 let mouthTimer;
+let avatarEnabled = false;
+let renderSequence = 0;
+let stateVideos = {};
 
 function setDoctorState(state, expression = "warm") {
-  portrait.className = `portrait ${state || ""} expression-${expression}`;
+  portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
+  if (state) portrait.classList.add(state);
+  portrait.classList.add(`expression-${expression}`);
   statusText.textContent = state === "speaking" ? "正在回答" : state === "listening" ? "正在聆听" : state === "thinking" ? "正在思考" : "在线候诊";
   soundWave.classList.toggle("active", state === "speaking");
   if (state !== "speaking") mouth.style.setProperty("--open", 0);
@@ -47,8 +54,10 @@ function selectChineseVoice() {
 }
 
 function speak(text) {
+  stopStateVideo();
   if (!voiceEnabled || !("speechSynthesis" in window)) {
     setDoctorState("", inferExpression(text));
+    playStateVideo("idle");
     return;
   }
   speechSynthesis.cancel();
@@ -66,8 +75,132 @@ function speak(text) {
   };
   utterance.onpause = () => animateMouth(false);
   utterance.onresume = () => animateMouth(true);
-  utterance.onend = utterance.onerror = () => { animateMouth(false); setDoctorState("", inferExpression(text)); };
+  utterance.onend = utterance.onerror = () => {
+    animateMouth(false);
+    setDoctorState("", inferExpression(text));
+    playStateVideo("idle");
+  };
   speechSynthesis.speak(utterance);
+}
+
+function stopAvatarVideo() {
+  avatarVideo.oncanplay = null;
+  avatarVideo.onended = null;
+  avatarVideo.onerror = null;
+  avatarVideo.pause();
+  avatarVideo.removeAttribute("src");
+  avatarVideo.load();
+  portrait.classList.remove("answer-video-active");
+}
+
+function stopStateVideo() {
+  stateVideo.oncanplay = null;
+  stateVideo.onerror = null;
+  stateVideo.pause();
+  stateVideo.removeAttribute("src");
+  stateVideo.dataset.state = "";
+  stateVideo.load();
+  portrait.classList.remove("state-video-active");
+}
+
+function playStateVideo(state) {
+  const source = stateVideos[state];
+  if (!source) {
+    stopStateVideo();
+    return;
+  }
+  if (stateVideo.dataset.state === state && stateVideo.src) {
+    stateVideo.play().catch(() => stopStateVideo());
+    return;
+  }
+  stopStateVideo();
+  stateVideo.dataset.state = state;
+  stateVideo.src = source;
+  stateVideo.oncanplay = async () => {
+    stateVideo.oncanplay = null;
+    portrait.classList.add("state-video-active");
+    try {
+      await stateVideo.play();
+    } catch (error) {
+      stopStateVideo();
+    }
+  };
+  stateVideo.onerror = () => stopStateVideo();
+}
+
+async function presentAnswer(text, revealAnswer) {
+  const currentSequence = ++renderSequence;
+  let answerRevealed = false;
+  const reveal = () => {
+    if (answerRevealed) return;
+    answerRevealed = true;
+    revealAnswer();
+  };
+  if (!avatarEnabled || !voiceEnabled) {
+    reveal();
+    speak(text);
+    return;
+  }
+  setDoctorState("thinking", inferExpression(text));
+  playStateVideo("thinking");
+  try {
+    const response = await fetch(`${API_BASE}/api/avatar/render`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "数字人渲染失败");
+    if (currentSequence !== renderSequence) {
+      reveal();
+      return;
+    }
+    avatarVideo.src = data.video_url;
+    await new Promise((resolve, reject) => {
+      const handleReady = () => {
+        avatarVideo.oncanplay = null;
+        avatarVideo.onerror = null;
+        resolve();
+      };
+      avatarVideo.oncanplay = handleReady;
+      avatarVideo.onerror = () => reject(new Error("回答视频加载失败"));
+      avatarVideo.load();
+      if (avatarVideo.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) handleReady();
+    });
+    if (currentSequence !== renderSequence) {
+      stopAvatarVideo();
+      reveal();
+      return;
+    }
+    avatarVideo.onended = () => {
+      stopAvatarVideo();
+      setDoctorState("", inferExpression(text));
+      playStateVideo("idle");
+    };
+    avatarVideo.onerror = () => {
+      stopAvatarVideo();
+      speak(text);
+    };
+    stopStateVideo();
+    portrait.classList.add("answer-video-active");
+    setDoctorState("speaking", inferExpression(text));
+    try {
+      await avatarVideo.play();
+      reveal();
+    } catch (error) {
+      stopAvatarVideo();
+      reveal();
+      speak(text);
+    }
+  } catch (error) {
+    if (currentSequence === renderSequence) {
+      stopAvatarVideo();
+      reveal();
+      speak(text);
+    } else {
+      reveal();
+    }
+  }
 }
 
 function addMessage(role, text) {
@@ -93,12 +226,15 @@ function addMessage(role, text) {
 async function sendMessage(message) {
   const text = message.trim();
   if (!text || sendButton.disabled) return;
+  renderSequence += 1;
+  stopAvatarVideo();
   speechSynthesis?.cancel();
   addMessage("user", text);
   input.value = "";
   input.style.height = "auto";
   sendButton.disabled = true;
   setDoctorState("thinking", inferExpression(text));
+  playStateVideo("thinking");
   try {
     const response = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
@@ -107,12 +243,12 @@ async function sendMessage(message) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "服务暂时不可用");
-    addMessage("doctor", data.answer);
-    speak(data.answer);
+    await presentAnswer(data.answer, () => addMessage("doctor", data.answer));
   } catch (error) {
     const text = `抱歉，暂时无法连接诊室服务：${error.message}`;
     addMessage("doctor", text);
     setDoctorState("", "concerned");
+    playStateVideo("idle");
   } finally {
     sendButton.disabled = false;
     input.focus();
@@ -134,6 +270,7 @@ function setupRecognition() {
     micButton.classList.add("recording");
     speechHint.hidden = false;
     setDoctorState("listening", "warm");
+    playStateVideo("listening");
   };
   recognition.onresult = event => {
     let transcript = "";
@@ -147,7 +284,10 @@ function setupRecognition() {
   recognition.onend = () => {
     micButton.classList.remove("recording");
     speechHint.hidden = true;
-    if (!sendButton.disabled) setDoctorState("", "warm");
+    if (!sendButton.disabled) {
+      setDoctorState("", "warm");
+      playStateVideo("idle");
+    }
   };
 }
 
@@ -163,8 +303,23 @@ micButton.addEventListener("click", () => {
 soundToggle.addEventListener("click", () => {
   voiceEnabled = !voiceEnabled;
   soundToggle.classList.toggle("active", voiceEnabled);
-  if (!voiceEnabled) { speechSynthesis?.cancel(); animateMouth(false); setDoctorState("", "warm"); }
+  if (!voiceEnabled) {
+    renderSequence += 1;
+    stopAvatarVideo();
+    speechSynthesis?.cancel();
+    animateMouth(false);
+    setDoctorState("", "warm");
+    playStateVideo("idle");
+  }
 });
-window.addEventListener("beforeunload", () => speechSynthesis?.cancel());
+window.addEventListener("beforeunload", () => { stopAvatarVideo(); stopStateVideo(); speechSynthesis?.cancel(); });
+fetch(`${API_BASE}/api/avatar/config`)
+  .then(response => response.ok ? response.json() : { enabled: false })
+  .then(config => {
+    avatarEnabled = Boolean(config.enabled);
+    stateVideos = config.state_videos || {};
+    playStateVideo("idle");
+  })
+  .catch(() => { avatarEnabled = false; });
 setupRecognition();
 speechSynthesis?.getVoices();
