@@ -1,9 +1,8 @@
-#coding:utf-8
+# coding: utf-8
 import requests
-import urllib3
+
 from utils.prompt_util import PromptUtil
 
-urllib3.disable_warnings()
 
 class ChatUtil(object):
     def __init__(self, api_url, api_key, model_name):
@@ -11,24 +10,39 @@ class ChatUtil(object):
         self.api_key = api_key
         self.model_name = model_name
 
-    def chat(self, prompt):
+    def complete(self, messages, tools=None, tool_choice=None):
         headers = {
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + self.api_key
+            "Authorization": "Bearer " + self.api_key,
         }
         data = {
             "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": PromptUtil.load_system_prompt()},
-                {"role": "user", "content": prompt}
-            ],
+            "messages": messages,
             "temperature": 0.2,
         }
+        if tools:
+            data["tools"] = tools
+            data["tool_choice"] = tool_choice or "auto"
 
-        try:
-            response = requests.post(self.api_url, json=data, headers=headers, timeout=60)
-            response.raise_for_status()
-            result = response.json()
-            return result['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            return f"[LLM Error]: {e}"
+        response = requests.post(
+            self.api_url,
+            json=data,
+            headers=headers,
+            timeout=60,
+        )
+        response.raise_for_status()
+        result = response.json()
+        choices = result.get("choices") or []
+        if not choices or not choices[0].get("message"):
+            raise RuntimeError("模型响应中缺少 choices[0].message")
+        return choices[0]["message"]
+
+    def chat(self, prompt):
+        message = self.complete([
+            {"role": "system", "content": PromptUtil.load_system_prompt()},
+            {"role": "user", "content": prompt},
+        ])
+        content = message.get("content")
+        if not content:
+            raise RuntimeError("模型未返回文本内容")
+        return content.strip()

@@ -22,6 +22,8 @@
 - long_memory_search(keyword)：从长期记忆区中搜索包含指定关键字的记录。
 - long_memory_upload(text)：对当前对话或重要事件进行归纳总结，并存入长期记忆区。
 
+这些记忆能力使用 OpenAI Chat Completions 兼容的原生 `tools/tool_calls` 协议：后端向模型声明 JSON Schema，按模型返回的 `tool_calls` 执行工具，并以对应的 `tool_call_id` 回传 `role=tool` 结果，直到模型生成最终答复。项目不再解析模型文本中的自定义工具标签。
+
 ## 2.快速启动（推荐）
 
 ### Dev Container + VS Code Task

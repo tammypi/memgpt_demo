@@ -21,11 +21,7 @@ class MemGpt(object):
         print("=" * 50)
 
     def respond(self, user_input):
-        answer, memory_rtn = self.functions.ope_llm_respond(user_input)
-        answer = answer.removeprefix("🦷 Dr.Li： ").strip()
-        if "\n🛠️" in answer:
-            answer = answer.split("\n🛠️", 1)[0].strip()
-        return answer, memory_rtn
+        return self.functions.ope_llm_respond(user_input)
 
     def run(self):
         print("欢迎来到 🦷 Dr.Li 的 AI 口腔诊所！我可以记住你说过的事，也能帮你回忆过去 🤖")
