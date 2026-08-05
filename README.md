@@ -99,6 +99,7 @@ AVATAR_TTS_PROMPT_TEXT=参考音频中逐字对应的文本
 
 ### 3.3 接口
 
+- `WS /api/chat/ws`：发送 `{ "message": "..." }` 后，按 `delta`、`done` 或 `error` 消息实时接收回答；上游 LLM 使用 `stream: true`。
 - `GET /api/avatar/config`：本地模型、母版及状态视频配置。
 - `POST /api/avatar/render`：创建本地异步生成任务。
 - `GET /api/avatar/jobs/{job_id}`：返回任务状态和已完成片段。

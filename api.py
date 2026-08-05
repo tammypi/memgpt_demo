@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -73,6 +73,11 @@ def respond(message: str):
         return doctor.respond(message)
 
 
+def respond_stream(message: str, on_delta):
+    with doctor_lock:
+        return doctor.respond_stream(message, on_delta)
+
+
 @app.get("/api/health")
 def health():
     return {
@@ -108,6 +113,45 @@ async def chat(payload: ChatRequest):
     if not answer:
         raise HTTPException(status_code=502, detail="模型未返回有效回答，请稍后重试。")
     return ChatResponse(answer=answer, memory_notice=memory_notice)
+
+
+@app.websocket("/api/chat/ws")
+async def chat_websocket(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        payload = ChatRequest.model_validate(await websocket.receive_json())
+        if not doctor.llm.api_key:
+            await websocket.send_json({"type": "error", "message": "尚未配置 LLM_API_KEY"})
+            return
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue()
+
+        def produce():
+            try:
+                answer, memory_notice = respond_stream(
+                    payload.message.strip(),
+                    lambda delta: loop.call_soon_threadsafe(queue.put_nowait, {"type": "delta", "content": delta}),
+                )
+                loop.call_soon_threadsafe(queue.put_nowait, {
+                    "type": "done", "answer": answer, "memory_notice": memory_notice,
+                })
+            except Exception as error:
+                loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(error)})
+
+        worker = asyncio.create_task(asyncio.to_thread(produce))
+        while True:
+            event = await queue.get()
+            await websocket.send_json(event)
+            if event["type"] in {"done", "error"}:
+                break
+        await worker
+    except (WebSocketDisconnect, ValueError):
+        return
+    finally:
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass
 
 
 @app.post("/api/avatar/render", response_model=AvatarJobResponse)

@@ -181,3 +181,40 @@ class FunctionUtil(object):
         if self.c_memory.is_current_memory_too_long():
             memory_rtn = self.memory_clear()
         return answer, memory_rtn
+
+    def ope_llm_respond_stream(self, user_input, on_delta):
+        self.c_memory.append_message(f"[User] {user_input}")
+        messages = [
+            {"role": "system", "content": PromptUtil.build_agent_prompt(self.c_memory)},
+            {"role": "user", "content": user_input},
+        ]
+
+        answer = ""
+        for _ in range(self.MAX_TOOL_ROUNDS):
+            round_parts = []
+            message = self.llm.complete_stream(
+                messages,
+                tools=self.TOOL_SCHEMAS,
+                on_content=lambda part: (round_parts.append(part), on_delta(part)),
+            )
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                answer = "".join(round_parts).strip()
+                break
+
+            messages.append(self.assistant_tool_message(message))
+            for tool_call in tool_calls:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id"),
+                    "name": (tool_call.get("function") or {}).get("name"),
+                    "content": self.execute_tool_call(tool_call),
+                })
+        else:
+            raise RuntimeError("模型连续调用工具次数过多，未能生成最终回答")
+
+        if not answer:
+            raise RuntimeError("模型没有生成最终回答")
+        self.c_memory.append_message(f"[Dr.Li] {answer}")
+        memory_rtn = self.memory_clear() if self.c_memory.is_current_memory_too_long() else None
+        return answer, memory_rtn

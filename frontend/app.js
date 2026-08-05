@@ -77,59 +77,85 @@ function playStateVideo(state) {
   stateVideo.onerror = () => stopStateVideo();
 }
 
-async function presentAnswer(text, revealAnswer) {
-  const currentSequence = ++renderSequence;
-  let answerRevealed = false;
-  const reveal = () => {
-    if (answerRevealed) return;
-    answerRevealed = true;
-    revealAnswer();
-  };
-  if (!avatarEnabled || !voiceEnabled) {
-    reveal();
-    setDoctorState("", inferExpression(text));
-    playStateVideo("idle");
-    return;
-  }
-  setDoctorState("thinking", inferExpression(text));
-  playStateVideo("thinking");
-  try {
-    const response = await fetch(`${API_BASE}/api/avatar/render`, {
+function avatarSpeechText(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, "代码示例")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "图片")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[*_~`#>|-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function createAvatarJob(text) {
+  const response = await fetch(`${API_BASE}/api/avatar/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "数字人渲染失败");
-    reveal();
-    let played = 0;
-    let job = data;
-    while (currentSequence === renderSequence) {
-      while (played < job.segments.length) {
-        await playAvatarSegment(job.segments[played].video_url, text, currentSequence);
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "数字人渲染失败");
+  return data;
+}
+
+async function playAvatarJob(jobPromise, text, sequence) {
+  let job = await jobPromise;
+  let played = 0;
+  while (sequence === renderSequence) {
+    while (played < job.segments.length) {
+      await playAvatarSegment(job.segments[played].video_url, text, sequence);
         played += 1;
-      }
-      if (job.status === "succeeded") break;
-      if (job.status === "failed") throw new Error(job.error || "本地数字人生成失败");
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const poll = await fetch(`${API_BASE}/api/avatar/jobs/${job.job_id}`);
-      job = await poll.json();
-      if (!poll.ok) throw new Error(job.detail || "获取数字人任务失败");
     }
+    if (job.status === "succeeded") break;
+    if (job.status === "failed") throw new Error(job.error || "本地数字人生成失败");
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const poll = await fetch(`${API_BASE}/api/avatar/jobs/${job.job_id}`);
+    job = await poll.json();
+    if (!poll.ok) throw new Error(job.detail || "获取数字人任务失败");
+  }
+}
+
+function startAvatarStream() {
+  const stream = { sequence: ++renderSequence, buffer: "", playback: Promise.resolve() };
+  stopAvatarVideo();
+  if (avatarEnabled && voiceEnabled) {
+    setDoctorState("thinking", "warm");
+    playStateVideo("thinking");
+  }
+  return stream;
+}
+
+function enqueueAvatarText(stream, rawText) {
+  const text = avatarSpeechText(rawText);
+  if (!text || !avatarEnabled || !voiceEnabled || stream.sequence !== renderSequence) return;
+  const jobPromise = createAvatarJob(text);
+  jobPromise.catch(() => {});
+  stream.playback = stream.playback.then(() => playAvatarJob(jobPromise, text, stream.sequence));
+}
+
+function feedAvatarStream(stream, delta) {
+  stream.buffer += delta;
+  const parts = stream.buffer.split(/(?<=[。！？!?\n])/);
+  stream.buffer = parts.pop() || "";
+  for (const part of parts) enqueueAvatarText(stream, part);
+}
+
+function finishAvatarStream(stream) {
+  enqueueAvatarText(stream, stream.buffer);
+  stream.buffer = "";
+  stream.playback.then(() => {
+    if (stream.sequence !== renderSequence) return;
     stopAvatarVideo();
-    setDoctorState("", inferExpression(text));
+    setDoctorState("", "warm");
     playStateVideo("idle");
-  } catch (error) {
-    if (currentSequence === renderSequence) {
+  }).catch(error => {
+    if (stream.sequence === renderSequence) {
       stopAvatarVideo();
-      reveal();
       setDoctorState("", "concerned");
       playStateVideo("idle");
       console.error(error);
-    } else {
-      reveal();
     }
-  }
+  });
 }
 
 async function playAvatarSegment(url, text, sequence) {
@@ -161,15 +187,105 @@ async function playAvatarSegment(url, text, sequence) {
   });
 }
 
-function addMessage(role, text) {
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+}
+
+function renderInlineMarkdown(text) {
+  const code = [];
+  let html = escapeHtml(text).replace(/`([^`\n]+)`/g, (_, value) => {
+    code.push(`<code>${value}</code>`);
+    return `\u0000${code.length - 1}\u0000`;
+  });
+  html = html
+    .replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+  return html.replace(/\u0000(\d+)\u0000/g, (_, index) => code[Number(index)]);
+}
+
+function renderMarkdown(markdown) {
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const output = [];
+  let paragraph = [];
+  let listType = "";
+  let quote = [];
+  let inCode = false;
+  let codeLanguage = "";
+  let codeLines = [];
+  const flushParagraph = () => {
+    if (paragraph.length) output.push(`<p>${renderInlineMarkdown(paragraph.join("\n")).replace(/\n/g, "<br>")}</p>`);
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (listType) output.push(`</${listType}>`);
+    listType = "";
+  };
+  const flushQuote = () => {
+    if (quote.length) output.push(`<blockquote>${renderMarkdown(quote.join("\n"))}</blockquote>`);
+    quote = [];
+  };
+
+  for (const line of lines) {
+    const fence = line.match(/^\s*```\s*([\w-]*)/);
+    if (fence) {
+      if (inCode) {
+        output.push(`<pre><code${codeLanguage ? ` class="language-${codeLanguage}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines = [];
+        codeLanguage = "";
+        inCode = false;
+      } else {
+        flushParagraph(); closeList(); flushQuote();
+        inCode = true;
+        codeLanguage = fence[1];
+      }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+    const quoteMatch = line.match(/^>\s?(.*)$/);
+    if (quoteMatch) { flushParagraph(); closeList(); quote.push(quoteMatch[1]); continue; }
+    flushQuote();
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph(); closeList();
+      const level = heading[1].length;
+      output.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) { flushParagraph(); closeList(); output.push("<hr>"); continue; }
+    const list = line.match(/^\s*(?:([-+*])|(\d+)[.)])\s+(.+)$/);
+    if (list) {
+      flushParagraph();
+      const nextType = list[2] ? "ol" : "ul";
+      if (listType !== nextType) { closeList(); output.push(`<${nextType}>`); listType = nextType; }
+      output.push(`<li>${renderInlineMarkdown(list[3])}</li>`);
+      continue;
+    }
+    closeList();
+    if (!line.trim()) flushParagraph(); else paragraph.push(line);
+  }
+  if (inCode) output.push(`<pre><code${codeLanguage ? ` class="language-${codeLanguage}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  flushParagraph(); closeList(); flushQuote();
+  return output.join("");
+}
+
+function addMessage(role, text = "") {
   const article = document.createElement("article");
   article.className = `message ${role}-message`;
   const content = document.createElement("div");
   const meta = document.createElement("small");
-  const paragraph = document.createElement("p");
+  const body = document.createElement("div");
+  body.className = "message-body";
   meta.textContent = role === "doctor" ? "李医生 · 刚刚" : "你 · 刚刚";
-  paragraph.textContent = text;
-  content.append(meta, paragraph);
+  if (role === "doctor") body.innerHTML = renderMarkdown(text);
+  else body.textContent = text;
+  content.append(meta, body);
   if (role === "doctor") {
     const avatar = document.createElement("span");
     avatar.className = "mini-avatar";
@@ -179,6 +295,32 @@ function addMessage(role, text) {
   article.append(content);
   messages.append(article);
   messages.scrollTop = messages.scrollHeight;
+  return body;
+}
+
+function chatWebSocketUrl() {
+  const url = new URL(API_BASE);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/api/chat/ws";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function streamChat(message, onDelta) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(chatWebSocketUrl());
+    let settled = false;
+    socket.onopen = () => socket.send(JSON.stringify({ message }));
+    socket.onmessage = event => {
+      const data = JSON.parse(event.data);
+      if (data.type === "delta") onDelta(data.content || "");
+      if (data.type === "done") { settled = true; resolve(data); socket.close(); }
+      if (data.type === "error") { settled = true; reject(new Error(data.message || "服务暂时不可用")); socket.close(); }
+    };
+    socket.onerror = () => { if (!settled) reject(new Error("WebSocket 连接失败")); };
+    socket.onclose = () => { if (!settled) reject(new Error("回答流意外中断")); };
+  });
 }
 
 async function sendMessage(message) {
@@ -192,18 +334,25 @@ async function sendMessage(message) {
   sendButton.disabled = true;
   setDoctorState("thinking", inferExpression(text));
   playStateVideo("thinking");
+  const answerBody = addMessage("doctor");
+  answerBody.classList.add("typing");
+  const avatarStream = startAvatarStream();
+  let answer = "";
   try {
-    const response = await fetch(`${API_BASE}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
+    const result = await streamChat(text, delta => {
+      answer += delta;
+      answerBody.innerHTML = renderMarkdown(answer);
+      messages.scrollTop = messages.scrollHeight;
+      feedAvatarStream(avatarStream, delta);
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "服务暂时不可用");
-    await presentAnswer(data.answer, () => addMessage("doctor", data.answer));
+    answer = result.answer || answer;
+    answerBody.innerHTML = renderMarkdown(answer);
+    answerBody.classList.remove("typing");
+    finishAvatarStream(avatarStream);
   } catch (error) {
-    const text = `抱歉，暂时无法连接诊室服务：${error.message}`;
-    addMessage("doctor", text);
+    answerBody.classList.remove("typing");
+    answerBody.innerHTML = renderMarkdown(answer || `抱歉，暂时无法连接诊室服务：${error.message}`);
+    renderSequence += 1;
     setDoctorState("", "concerned");
     playStateVideo("idle");
   } finally {

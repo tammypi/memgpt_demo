@@ -23,6 +23,9 @@ class MemGpt(object):
     def respond(self, user_input):
         return self.functions.ope_llm_respond(user_input)
 
+    def respond_stream(self, user_input, on_delta):
+        return self.functions.ope_llm_respond_stream(user_input, on_delta)
+
     def run(self):
         print("欢迎来到 🦷 Dr.Li 的 AI 口腔诊所！我可以记住你说过的事，也能帮你回忆过去 🤖")
         print("请输入内容（输入 'exit' 退出）：")
