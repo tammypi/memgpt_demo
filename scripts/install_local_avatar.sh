@@ -3,32 +3,46 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL_DIR="${ROOT_DIR}/models"
+VENV_DIR="${ROOT_DIR}/.venvs"
 
-mkdir -p "${MODEL_DIR}"
+mkdir -p "${MODEL_DIR}" "${VENV_DIR}"
 python -m pip install --upgrade pip setuptools wheel modelscope huggingface_hub
+
+ensure_venv() {
+  local name="$1"
+  local path="${VENV_DIR}/${name}"
+  # A mounted venv can contain an interpreter symlink from a different image.
+  if [[ ! -x "${path}/bin/python" ]] || ! "${path}/bin/python" -c 'import sys' >/dev/null 2>&1; then
+    python -m venv --clear "${path}"
+  fi
+}
 
 if [[ ! -d "${MODEL_DIR}/CosyVoice/.git" ]]; then
   git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git "${MODEL_DIR}/CosyVoice"
 else
   git -C "${MODEL_DIR}/CosyVoice" submodule update --init --recursive
 fi
-python -m venv "${ROOT_DIR}/.venvs/cosyvoice"
-"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
+ensure_venv cosyvoice
+"${VENV_DIR}/cosyvoice/bin/python" -m pip install \
   --upgrade pip "setuptools<81" wheel
-"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
+"${VENV_DIR}/cosyvoice/bin/python" -m pip install \
   --no-build-isolation openai-whisper==20231117
-"${ROOT_DIR}/.venvs/cosyvoice/bin/python" -m pip install \
-  -r "${MODEL_DIR}/CosyVoice/requirements.txt"
+COSYVOICE_REQUIREMENTS="$(mktemp)"
+trap 'rm -f "${COSYVOICE_REQUIREMENTS}"' EXIT
+sed '/^[[:space:]]*tensorrt-cu12\(-bindings\|-libs\)\?==/d' \
+  "${MODEL_DIR}/CosyVoice/requirements.txt" > "${COSYVOICE_REQUIREMENTS}"
+"${VENV_DIR}/cosyvoice/bin/python" -m pip install \
+  -r "${COSYVOICE_REQUIREMENTS}"
 modelscope download --model iic/CosyVoice2-0.5B \
   --local_dir "${MODEL_DIR}/CosyVoice/pretrained_models/CosyVoice2-0.5B"
 
 if [[ ! -d "${MODEL_DIR}/MuseTalk/.git" ]]; then
   git clone https://github.com/TMElyralab/MuseTalk.git "${MODEL_DIR}/MuseTalk"
 fi
-python -m venv "${ROOT_DIR}/.venvs/musetalk"
-"${ROOT_DIR}/.venvs/musetalk/bin/python" -m pip install \
+ensure_venv musetalk
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
   --upgrade pip "setuptools<81" wheel
-"${ROOT_DIR}/.venvs/musetalk/bin/python" -m pip install \
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
   -r "${MODEL_DIR}/MuseTalk/requirements.txt"
 huggingface-cli download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"

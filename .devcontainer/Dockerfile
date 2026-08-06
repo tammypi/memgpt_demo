@@ -9,9 +9,11 @@ RUN apt-get update \
         ffmpeg \
         git \
         git-lfs \
+        build-essential \
         libgl1 \
         libglib2.0-0 \
         python3 \
+        python3.10-dev \
         python3-pip \
         python3-venv \
         sudo \
