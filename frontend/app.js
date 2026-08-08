@@ -1,4 +1,5 @@
-const API_BASE = localStorage.getItem("drLiApiBase") || "http://localhost:8000";
+const apiOverride = new URLSearchParams(window.location.search).get("api");
+const API_BASE = apiOverride || `${window.location.protocol}//${window.location.hostname}:8000`;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const portrait = document.querySelector("#portrait");
 const stateVideo = document.querySelector("#stateVideo");
