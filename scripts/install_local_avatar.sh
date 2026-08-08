@@ -53,6 +53,10 @@ ensure_venv musetalk
   --index-url "${PYTORCH_INDEX_URL}"
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
   --index-url "${PYPI_INDEX_URL}" -r "${MODEL_DIR}/MuseTalk/requirements.txt"
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
+  --index-url "${PYPI_INDEX_URL}" --no-cache-dir -U openmim
+"${VENV_DIR}/musetalk/bin/python" -m mim install \
+  mmengine "mmcv==2.0.1" "mmdet==3.1.0" "mmpose==1.1.0"
 hf download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"
 
