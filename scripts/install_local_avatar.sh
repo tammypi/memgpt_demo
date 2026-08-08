@@ -13,6 +13,7 @@ python -m pip install --index-url "${PYPI_INDEX_URL}" \
 
 # Use the HF mirror by default; callers can override it with HF_ENDPOINT.
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 
 ensure_venv() {
   local name="$1"
@@ -63,5 +64,24 @@ ensure_venv musetalk
   --index-url "${PYPI_INDEX_URL}" "mmdet==3.1.0" "mmpose==1.1.0"
 hf download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"
+hf download yzd-v/DWPose \
+  --local-dir "${MODEL_DIR}/MuseTalk/models/dwpose" \
+  --include dw-ll_ucoco_384.pth
+hf download stabilityai/sd-vae-ft-mse \
+  --local-dir "${MODEL_DIR}/MuseTalk/models/sd-vae" \
+  --include diffusion_pytorch_model.bin
+curl -L https://hf-mirror.com/stabilityai/sd-vae-ft-mse/resolve/main/config.json \
+  -o "${MODEL_DIR}/MuseTalk/models/sd-vae/config.json"
+hf download openai/whisper-tiny \
+  --local-dir "${MODEL_DIR}/MuseTalk/models/whisper" \
+  --include pytorch_model.bin preprocessor_config.json
+curl -L https://hf-mirror.com/openai/whisper-tiny/resolve/main/config.json \
+  -o "${MODEL_DIR}/MuseTalk/models/whisper/config.json"
+mkdir -p "${MODEL_DIR}/MuseTalk/models/face-parse-bisent"
+"${VENV_DIR}/musetalk/bin/python" -m gdown \
+  154JgKpzCPW82qINcVieuPH3fZ2e0P812 \
+  -O "${MODEL_DIR}/MuseTalk/models/face-parse-bisent/79999_iter.pth"
+curl -L https://download.pytorch.org/models/resnet18-5c106cde.pth \
+  -o "${MODEL_DIR}/MuseTalk/models/face-parse-bisent/resnet18-5c106cde.pth"
 
 echo "本地数字人模型已安装。请重启后端。"
