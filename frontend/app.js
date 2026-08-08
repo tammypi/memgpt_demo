@@ -20,6 +20,9 @@ let opentalkingSession = null;
 let opentalkingPeer = null;
 let opentalkingStream = null;
 let opentalkingConnectPromise = null;
+let avatarAudioBlocked = false;
+let avatarAudioContext = null;
+let avatarAudioSource = null;
 
 function setDoctorState(state, expression = "warm") {
   portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
@@ -43,6 +46,17 @@ function stopAvatarVideo() {
   avatarVideo.removeAttribute("src");
   avatarVideo.load();
   portrait.classList.remove("answer-video-active");
+}
+
+function primeAvatarPlayback() {
+  if (!avatarAudioContext) avatarAudioContext = new AudioContext();
+  avatarAudioContext.resume().catch(() => {});
+  if (!avatarVideo.srcObject) avatarVideo.srcObject = new MediaStream();
+  avatarVideo.muted = false;
+  avatarVideo.play().catch(() => {
+    // The stream may not have a track yet. Keeping this call inside the user
+    // gesture allows the later WebRTC track to play with sound.
+  });
 }
 
 function stopStateVideo() {
@@ -96,7 +110,7 @@ async function connectOpenTalking() {
     const state = opentalkingPeer.connectionState;
     if (state === "connected") {
       stopStateVideo();
-      setDoctorState("speaking", "warm");
+      if (!avatarAudioBlocked) setDoctorState("speaking", "warm");
     }
     if (state === "failed" || state === "closed") {
       statusText.textContent = "数字人连接失败";
@@ -107,22 +121,35 @@ async function connectOpenTalking() {
   opentalkingPeer.addTransceiver("video", { direction: "recvonly" });
   opentalkingPeer.ontrack = event => {
     if (!opentalkingStream.getTracks().some(track => track.id === event.track.id)) {
-      opentalkingStream.addTrack(event.track);
+    opentalkingStream.addTrack(event.track);
+    if (event.track.kind === "audio" && avatarAudioContext && !avatarAudioSource) {
+      const audioStream = new MediaStream([event.track]);
+      avatarAudioSource = avatarAudioContext.createMediaStreamSource(audioStream);
+      avatarAudioSource.connect(avatarAudioContext.destination);
+    }
     }
     stopStateVideo();
     portrait.classList.add("answer-video-active");
     setDoctorState("speaking", "warm");
-    avatarVideo.onloadedmetadata = async () => {
+    const startPlayback = async () => {
       try {
-        await avatarVideo.play();
         avatarVideo.muted = !voiceEnabled;
-        portrait.classList.add("answer-video-active");
-        setDoctorState("speaking", "warm");
+        await avatarVideo.play();
+        avatarAudioBlocked = false;
       } catch (error) {
-        console.error("数字人媒体播放失败", error);
-        statusText.textContent = "请点击声音按钮播放数字人";
+        // Preserve visible playback, but do not pretend sound is enabled.
+        avatarVideo.muted = true;
+        try {
+          await avatarVideo.play();
+          avatarAudioBlocked = true;
+          statusText.textContent = "请点击声音按钮播放数字人";
+        } catch (playError) {
+          console.error("数字人媒体播放失败", playError);
+          statusText.textContent = "数字人媒体播放失败";
+        }
       }
     };
+    startPlayback();
   };
   avatarVideo.autoplay = true;
   avatarVideo.playsInline = true;
@@ -375,6 +402,7 @@ async function sendMessage(message) {
   renderSequence += 1;
   stopAvatarVideo();
   addMessage("user", text);
+  primeAvatarPlayback();
   input.value = "";
   input.style.height = "auto";
   sendButton.disabled = true;
@@ -455,7 +483,13 @@ soundToggle.addEventListener("click", () => {
   voiceEnabled = !voiceEnabled;
   avatarVideo.muted = !voiceEnabled;
   soundToggle.classList.toggle("active", voiceEnabled);
-  if (voiceEnabled && avatarVideo.srcObject) avatarVideo.play().catch(() => {});
+  if (voiceEnabled && avatarVideo.srcObject) {
+    if (avatarAudioContext) avatarAudioContext.resume().catch(() => {});
+    avatarVideo.play().then(() => {
+      avatarAudioBlocked = false;
+      if (opentalkingPeer?.connectionState === "connected") setDoctorState("speaking", "warm");
+    }).catch(() => {});
+  }
   if (!voiceEnabled) {
     renderSequence += 1;
     stopAvatarVideo();
