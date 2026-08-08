@@ -122,11 +122,7 @@ async function createAvatarJob(text) {
 
 async function playAvatarJob(jobPromise, text, sequence) {
   await jobPromise;
-  if (sequence === renderSequence) {
-    avatarSpeechQueued = true;
-    portrait.classList.add("answer-video-active");
-    setDoctorState("speaking", inferExpression(text));
-  }
+  if (sequence === renderSequence) avatarSpeechQueued = true;
 }
 
 function watchOpenTalkingEvents(sessionId) {
