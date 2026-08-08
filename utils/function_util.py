@@ -143,7 +143,23 @@ class FunctionUtil(object):
     @staticmethod
     def clean_answer(text):
         """Remove accidental tool-protocol fragments emitted as plain text."""
-        cleaned = re.sub(r"\$\{[^}]+\}", "", text or "")
+        cleaned = (text or "").strip()
+        # Some compatible gateways wrap the assistant text in a JSON object.
+        # Unwrap only known text fields; never show the protocol to the user.
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            try:
+                decoded = json.loads(cleaned)
+                if isinstance(decoded, dict):
+                    for key in ("text", "content", "answer", "response"):
+                        value = decoded.get(key)
+                        if isinstance(value, str):
+                            cleaned = value.strip()
+                            break
+                    else:
+                        return ""
+            except (TypeError, json.JSONDecodeError):
+                pass
+        cleaned = re.sub(r"\$\{[^}]+\}", "", cleaned)
         cleaned = re.sub(r"\s*\{\s*\"keyword\"\s*:\s*\"[^\"]*\"\s*\}\s*", " ", cleaned)
         return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
@@ -181,6 +197,12 @@ class FunctionUtil(object):
         else:
             raise RuntimeError("模型连续调用工具次数过多，未能生成最终回答")
 
+        if not answer:
+            messages.append({
+                "role": "user",
+                "content": "请基于以上工具结果，直接给出面向用户的最终自然语言回答；不要输出工具名称、参数、JSON 或内部协议。",
+            })
+            answer = self.clean_answer((self.llm.complete(messages, tools=None).get("content") or ""))
         if not answer:
             raise RuntimeError("模型没有生成最终回答")
         self.c_memory.append_message(f"[Dr.Li] {answer}")
@@ -223,6 +245,16 @@ class FunctionUtil(object):
         else:
             raise RuntimeError("模型连续调用工具次数过多，未能生成最终回答")
 
+        if not answer:
+            messages.append({
+                "role": "user",
+                "content": "请基于以上工具结果，直接给出面向用户的最终自然语言回答；不要输出工具名称、参数、JSON 或内部协议。",
+            })
+            final_parts = []
+            self.llm.complete_stream(messages, tools=None, on_content=final_parts.append)
+            answer = self.clean_answer("".join(final_parts))
+            if answer:
+                on_delta(answer)
         if not answer:
             raise RuntimeError("模型没有生成最终回答")
         self.c_memory.append_message(f"[Dr.Li] {answer}")
