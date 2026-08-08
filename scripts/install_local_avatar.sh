@@ -54,9 +54,13 @@ ensure_venv musetalk
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
   --index-url "${PYPI_INDEX_URL}" -r "${MODEL_DIR}/MuseTalk/requirements.txt"
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
-  --index-url "${PYPI_INDEX_URL}" --no-cache-dir -U openmim
-"${VENV_DIR}/musetalk/bin/python" -m mim install \
-  mmengine "mmcv==2.0.1" "mmdet==3.1.0" "mmpose==1.1.0"
+  --index-url "${PYPI_INDEX_URL}" "mmengine" \
+  --find-links https://download.openmmlab.com/mmcv/dist/cu117/torch2.0/index.html \
+  "mmcv==2.0.1"
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
+  --index-url "${PYPI_INDEX_URL}" --no-build-isolation chumpy
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
+  --index-url "${PYPI_INDEX_URL}" "mmdet==3.1.0" "mmpose==1.1.0"
 hf download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"
 
