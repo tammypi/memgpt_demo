@@ -24,6 +24,9 @@ let avatarAudioBlocked = false;
 let avatarAudioContext = null;
 let avatarAudioSource = null;
 let opentalkingEvents = null;
+let chatInProgress = false;
+let avatarSpeechQueued = false;
+let avatarMediaStarted = false;
 
 function setDoctorState(state, expression = "warm") {
   portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
@@ -92,16 +95,27 @@ async function createAvatarJob(text) {
 
 async function playAvatarJob(jobPromise, text, sequence) {
   await jobPromise;
+  if (sequence === renderSequence) {
+    avatarSpeechQueued = true;
+    portrait.classList.add("answer-video-active");
+    setDoctorState("speaking", inferExpression(text));
+  }
 }
 
 function watchOpenTalkingEvents(sessionId) {
   opentalkingEvents?.close();
   opentalkingEvents = new EventSource(`${API_BASE}/api/opentalking/sessions/${sessionId}/events`);
   opentalkingEvents.addEventListener("speech.media_started", () => {
+    if (!chatInProgress) return;
+    avatarMediaStarted = true;
     portrait.classList.add("answer-video-active");
     setDoctorState("speaking", "warm");
   });
   opentalkingEvents.addEventListener("speech.ended", () => {
+    if (!avatarSpeechQueued || !avatarMediaStarted) return;
+    chatInProgress = false;
+    avatarSpeechQueued = false;
+    avatarMediaStarted = false;
     portrait.classList.remove("answer-video-active");
     setDoctorState("", "warm");
   });
@@ -110,8 +124,9 @@ function watchOpenTalkingEvents(sessionId) {
 async function connectOpenTalking() {
   const sessionResponse = await fetch(`${API_BASE}/api/opentalking/session`, { method: "POST" });
   if (!sessionResponse.ok) throw new Error(await sessionResponse.text());
-  opentalkingSession = (await sessionResponse.json()).session_id;
-  watchOpenTalkingEvents(opentalkingSession);
+  const sessionId = (await sessionResponse.json()).session_id;
+  opentalkingSession = sessionId;
+  watchOpenTalkingEvents(sessionId);
   let rtcConfig = {};
   try {
     const iceResponse = await fetch(`${API_BASE}/api/opentalking/ice-config`);
@@ -175,7 +190,7 @@ async function connectOpenTalking() {
       new Promise(resolve => setTimeout(resolve, 8000)),
     ]);
   }
-  const answerResponse = await fetch(`${API_BASE}/api/opentalking/sessions/${opentalkingSession}/webrtc/offer`, {
+  const answerResponse = await fetch(`${API_BASE}/api/opentalking/sessions/${sessionId}/webrtc/offer`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sdp: opentalkingPeer.localDescription?.sdp || offer.sdp,
@@ -188,12 +203,15 @@ async function connectOpenTalking() {
 }
 
 function startAvatarStream() {
-  const stream = { sequence: ++renderSequence, buffer: "", playback: Promise.resolve() };
+  const stream = { sequence: ++renderSequence, speechText: "", playback: Promise.resolve() };
   if (!avatarVideo.srcObject) stopAvatarVideo();
   if (!opentalkingSession && !opentalkingConnectPromise) {
     opentalkingConnectPromise = connectOpenTalking().catch(error => {
       console.error("OpenTalking 实时会话连接失败", error);
       avatarEnabled = false;
+      opentalkingSession = null;
+      opentalkingConnectPromise = null;
+      throw error;
     });
   }
   if (avatarEnabled && voiceEnabled) {
@@ -205,30 +223,32 @@ function startAvatarStream() {
 
 function enqueueAvatarText(stream, rawText) {
   const text = avatarSpeechText(rawText);
-  if (!text || !voiceEnabled || stream.sequence !== renderSequence) return;
+  if (!text || !voiceEnabled) return;
   stream.playback = stream.playback.then(async () => {
-    if (stream.sequence !== renderSequence) return;
-    if (!opentalkingSession) {
+    if (!opentalkingSession || !avatarEnabled) {
       if (!opentalkingConnectPromise) {
         opentalkingConnectPromise = connectOpenTalking();
       }
-      await opentalkingConnectPromise;
+      try {
+        await opentalkingConnectPromise;
+      } catch (error) {
+        opentalkingSession = null;
+        opentalkingConnectPromise = connectOpenTalking();
+        await opentalkingConnectPromise;
+      }
     }
-    if (!avatarEnabled) return;
+    if (!avatarEnabled) throw new Error("数字人实时会话尚未连接");
     await playAvatarJob(createAvatarJob(text), text, stream.sequence);
   });
 }
 
 function feedAvatarStream(stream, delta) {
-  stream.buffer += delta;
-  const parts = stream.buffer.split(/(?<=[。！？!?\n])/);
-  stream.buffer = parts.pop() || "";
-  for (const part of parts) enqueueAvatarText(stream, part);
+  stream.speechText += delta;
 }
 
 function finishAvatarStream(stream) {
-  enqueueAvatarText(stream, stream.buffer);
-  stream.buffer = "";
+  enqueueAvatarText(stream, stream.speechText);
+  stream.speechText = "";
   stream.playback.then(() => {
     if (stream.sequence !== renderSequence) return;
   }).catch(error => {
@@ -414,6 +434,9 @@ async function sendMessage(message) {
   input.value = "";
   input.style.height = "auto";
   sendButton.disabled = true;
+  chatInProgress = true;
+  avatarSpeechQueued = false;
+  avatarMediaStarted = false;
   setDoctorState("thinking", inferExpression(text));
   playStateVideo("thinking");
   const answerBody = addMessage("doctor");
