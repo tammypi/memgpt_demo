@@ -26,6 +26,13 @@ uv sync --extra dev --extra models --extra quicktalk-cuda --python "${OPENTALKIN
 uv sync --extra dev --extra models --extra local-audio --python "${OPENTALKING_PYTHON}" \
   --index-url "${PYPI_INDEX_URL}"
 
+# insightface requires the native onnxruntime package. A partial install can
+# leave only its namespace directory, which makes QuickTalk fail at startup.
+if ! .venv/bin/python -c 'import onnxruntime; assert hasattr(onnxruntime, "InferenceSession")' >/dev/null 2>&1; then
+  uv pip install --python .venv/bin/python --reinstall "onnxruntime==1.28.0" \
+    --index-url "${PYPI_INDEX_URL}"
+fi
+
 export OPENTALKING_MODEL_ROOT="${MODEL_ROOT}"
 export OPENTALKING_QUICKTALK_ASSET_ROOT="${MODEL_ROOT}/quicktalk"
 mkdir -p "${OPENTALKING_QUICKTALK_ASSET_ROOT}/checkpoints"

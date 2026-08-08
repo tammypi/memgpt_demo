@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from collections.abc import AsyncIterator
@@ -41,13 +42,19 @@ class OpenTalkingClient:
             raise OpenTalkingError(response.text)
 
     async def offer(self, session_id: str, body: dict) -> dict:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                f"{self.base_url}/sessions/{session_id}/webrtc/offer", json=body
-            )
-        if response.is_error:
-            raise OpenTalkingError(response.text)
-        return response.json()
+        last_error = ""
+        for attempt in range(30):
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{self.base_url}/sessions/{session_id}/webrtc/offer", json=body
+                )
+            if not response.is_error:
+                return response.json()
+            last_error = response.text
+            if "not loaded" not in last_error and "not ready" not in last_error:
+                break
+            await asyncio.sleep(1)
+        raise OpenTalkingError(last_error)
 
     async def ice_config(self) -> dict:
         async with httpx.AsyncClient(timeout=10) as client:

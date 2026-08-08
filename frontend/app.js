@@ -178,7 +178,7 @@ function enqueueAvatarText(stream, rawText) {
       }
       await opentalkingConnectPromise;
     }
-    if (!avatarEnabled) throw new Error("数字人实时会话尚未连接");
+    if (!avatarEnabled) return;
     await playAvatarJob(createAvatarJob(text), text, stream.sequence);
   });
 }
