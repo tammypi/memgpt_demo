@@ -3,6 +3,12 @@ set -euo pipefail
 
 ROOT="${OPENTALKING_ROOT:-${PWD}/vendor/opentalking}"
 MODEL_ROOT="${OPENTALKING_MODEL_ROOT:-${PWD}/models/opentalking}"
+PROJECT_ROOT="$(cd "$(dirname "${ROOT}")/.." && pwd)"
+OPEN_TALKING_BIN="${ROOT}/.venv/bin/opentalking-unified"
+if [[ ! -x "${OPEN_TALKING_BIN}" ]] || ! "${ROOT}/.venv/bin/python" -c 'import opentalking' >/dev/null 2>&1; then
+  echo "OpenTalking 环境未就绪，开始安装依赖和模型..."
+  bash "${PROJECT_ROOT}/scripts/install_opentalking.sh"
+fi
 cd "${ROOT}"
 PROJECT_ROOT="$(cd "${ROOT}/../.." && pwd)"
 if [[ -f "${PROJECT_ROOT}/.env" ]]; then
