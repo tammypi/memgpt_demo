@@ -2,6 +2,7 @@ const apiOverride = new URLSearchParams(window.location.search).get("api");
 const API_BASE = apiOverride || `${window.location.protocol}//${window.location.hostname}:8000`;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const portrait = document.querySelector("#portrait");
+const stateVideo = document.querySelector("#stateVideo");
 const avatarVideo = document.querySelector("#avatarVideo");
 const statusText = document.querySelector("#statusText");
 const soundWave = document.querySelector("#soundWave");
@@ -27,6 +28,10 @@ let opentalkingEvents = null;
 let chatInProgress = false;
 let avatarSpeechQueued = false;
 let avatarMediaStarted = false;
+const stateVideos = {
+  idle: "assets/doctor-idle.mp4",
+  listening: "assets/doctor-listening.mp4",
+};
 
 function setDoctorState(state, expression = "warm") {
   portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
@@ -34,6 +39,11 @@ function setDoctorState(state, expression = "warm") {
   portrait.classList.add(`expression-${expression}`);
   statusText.textContent = state === "speaking" ? "正在回答" : state === "listening" ? "正在聆听" : state === "thinking" ? "正在思考" : "在线候诊";
   soundWave.classList.toggle("active", state === "speaking");
+  if (state === "speaking") {
+    stopStateVideo();
+    portrait.classList.remove("state-video-active");
+  }
+  else playStateVideo(state || "idle");
 }
 
 function inferExpression(text) {
@@ -64,11 +74,27 @@ function primeAvatarPlayback() {
 }
 
 function stopStateVideo() {
-  return;
+  stateVideo.pause();
+  stateVideo.oncanplay = null;
+  stateVideo.onerror = null;
 }
 
 function playStateVideo(state) {
-  return;
+  const source = stateVideos[state] || stateVideos.idle;
+  if (stateVideo.dataset.state === state && stateVideo.src) {
+    stateVideo.play().catch(() => {});
+    return;
+  }
+  stopStateVideo();
+  if (stateVideo.currentSrc) portrait.classList.add("state-video-active");
+  stateVideo.dataset.state = state;
+  stateVideo.src = source;
+  stateVideo.oncanplay = () => {
+    stateVideo.oncanplay = null;
+    portrait.classList.add("state-video-active");
+    stateVideo.play().catch(() => stopStateVideo());
+  };
+  stateVideo.onerror = () => stopStateVideo();
 }
 
 function avatarSpeechText(text) {
@@ -518,7 +544,6 @@ soundToggle.addEventListener("click", () => {
     if (avatarAudioContext) avatarAudioContext.resume().catch(() => {});
     avatarVideo.play().then(() => {
       avatarAudioBlocked = false;
-      if (opentalkingPeer?.connectionState === "connected") setDoctorState("speaking", "warm");
     }).catch(() => {});
   }
   if (!voiceEnabled) {
@@ -529,4 +554,5 @@ soundToggle.addEventListener("click", () => {
   }
 });
 window.addEventListener("beforeunload", () => { opentalkingEvents?.close(); stopAvatarVideo(); stopStateVideo(); });
+playStateVideo("idle");
 setupRecognition();
