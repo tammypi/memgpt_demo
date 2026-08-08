@@ -8,6 +8,9 @@ VENV_DIR="${ROOT_DIR}/.venvs"
 mkdir -p "${MODEL_DIR}" "${VENV_DIR}"
 python -m pip install --upgrade pip setuptools wheel modelscope huggingface_hub
 
+# Use the HF mirror by default; callers can override it with HF_ENDPOINT.
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+
 ensure_venv() {
   local name="$1"
   local path="${VENV_DIR}/${name}"
@@ -44,7 +47,7 @@ ensure_venv musetalk
   --upgrade pip "setuptools<81" wheel
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
   -r "${MODEL_DIR}/MuseTalk/requirements.txt"
-huggingface-cli download TMElyralab/MuseTalk \
+hf download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"
 
 echo "本地数字人模型已安装。请重启后端。"
