@@ -1,6 +1,7 @@
 .env
 .venv/
 .venvs/
+node_modules/
 __pycache__/
 *.py[cod]
 .pytest_cache/

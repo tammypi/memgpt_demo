@@ -23,6 +23,7 @@ let opentalkingConnectPromise = null;
 let avatarAudioBlocked = false;
 let avatarAudioContext = null;
 let avatarAudioSource = null;
+let opentalkingEvents = null;
 
 function setDoctorState(state, expression = "warm") {
   portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
@@ -93,10 +94,24 @@ async function playAvatarJob(jobPromise, text, sequence) {
   await jobPromise;
 }
 
+function watchOpenTalkingEvents(sessionId) {
+  opentalkingEvents?.close();
+  opentalkingEvents = new EventSource(`${API_BASE}/api/opentalking/sessions/${sessionId}/events`);
+  opentalkingEvents.addEventListener("speech.media_started", () => {
+    portrait.classList.add("answer-video-active");
+    setDoctorState("speaking", "warm");
+  });
+  opentalkingEvents.addEventListener("speech.ended", () => {
+    portrait.classList.remove("answer-video-active");
+    setDoctorState("", "warm");
+  });
+}
+
 async function connectOpenTalking() {
   const sessionResponse = await fetch(`${API_BASE}/api/opentalking/session`, { method: "POST" });
   if (!sessionResponse.ok) throw new Error(await sessionResponse.text());
   opentalkingSession = (await sessionResponse.json()).session_id;
+  watchOpenTalkingEvents(opentalkingSession);
   let rtcConfig = {};
   try {
     const iceResponse = await fetch(`${API_BASE}/api/opentalking/ice-config`);
@@ -108,17 +123,13 @@ async function connectOpenTalking() {
   avatarVideo.muted = true;
   opentalkingPeer.onconnectionstatechange = () => {
     const state = opentalkingPeer.connectionState;
-    if (state === "connected") {
-      stopStateVideo();
-      if (!avatarAudioBlocked) setDoctorState("speaking", "warm");
-    }
     if (state === "failed" || state === "closed") {
       statusText.textContent = "数字人连接失败";
       portrait.classList.remove("answer-video-active");
     }
   };
-  opentalkingPeer.addTransceiver("audio", { direction: "recvonly" });
   opentalkingPeer.addTransceiver("video", { direction: "recvonly" });
+  opentalkingPeer.addTransceiver("audio", { direction: "recvonly" });
   opentalkingPeer.ontrack = event => {
     if (!opentalkingStream.getTracks().some(track => track.id === event.track.id)) {
     opentalkingStream.addTrack(event.track);
@@ -129,8 +140,6 @@ async function connectOpenTalking() {
     }
     }
     stopStateVideo();
-    portrait.classList.add("answer-video-active");
-    setDoctorState("speaking", "warm");
     const startPlayback = async () => {
       try {
         avatarVideo.muted = !voiceEnabled;
@@ -222,7 +231,6 @@ function finishAvatarStream(stream) {
   stream.buffer = "";
   stream.playback.then(() => {
     if (stream.sequence !== renderSequence) return;
-    // OpenTalking owns the long-lived WebRTC stream; keep it attached after queuing speak.
   }).catch(error => {
     if (stream.sequence === renderSequence) {
       setDoctorState("", "concerned");
@@ -497,5 +505,5 @@ soundToggle.addEventListener("click", () => {
     playStateVideo("idle");
   }
 });
-window.addEventListener("beforeunload", () => { stopAvatarVideo(); stopStateVideo(); });
+window.addEventListener("beforeunload", () => { opentalkingEvents?.close(); stopAvatarVideo(); stopStateVideo(); });
 setupRecognition();

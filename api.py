@@ -1,5 +1,6 @@
 # coding: utf-8
 import asyncio
+import json
 import os
 import threading
 from pathlib import Path
@@ -8,6 +9,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from memgpt import MemGpt
@@ -93,6 +95,15 @@ async def opentalking_ice_config():
         return await opentalking.ice_config()
     except (OpenTalkingError, httpx.HTTPError) as error:
         raise HTTPException(status_code=502, detail=f"OpenTalking ICE 配置失败：{error}") from error
+
+
+@app.get("/api/opentalking/sessions/{session_id}/events")
+async def opentalking_events(session_id: str):
+    async def event_stream():
+        async for event_name, payload in opentalking.events(session_id):
+            yield f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/api/opentalking/sessions/{session_id}/speak")

@@ -44,7 +44,7 @@ class OpenTalkingClient:
     async def offer(self, session_id: str, body: dict) -> dict:
         last_error = ""
         for attempt in range(30):
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=120) as client:
                 response = await client.post(
                     f"{self.base_url}/sessions/{session_id}/webrtc/offer", json=body
                 )

@@ -15,6 +15,14 @@ if [[ ! -f "${OPENTALKING_ROOT}/pyproject.toml" ]]; then
   git clone --depth 1 https://github.com/datascale-ai/opentalking.git "${OPENTALKING_ROOT}"
 fi
 
+AVATAR_ID="custom-Dr-Li-李医生-20260808-060828-741"
+AVATAR_SOURCE="${ROOT_DIR}/assets/opentalking/${AVATAR_ID}"
+AVATAR_TARGET="${OPENTALKING_ROOT}/examples/avatars/${AVATAR_ID}"
+if [[ -f "${AVATAR_SOURCE}/manifest.json" ]]; then
+  mkdir -p "${AVATAR_TARGET}"
+  cp -a "${AVATAR_SOURCE}/." "${AVATAR_TARGET}/"
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
   python -m pip install --index-url "${PYPI_INDEX_URL}" uv
 fi
