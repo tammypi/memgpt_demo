@@ -46,6 +46,9 @@ ensure_venv musetalk
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
   --upgrade pip "setuptools<81" wheel
 "${VENV_DIR}/musetalk/bin/python" -m pip install \
+  torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
+  --index-url https://download.pytorch.org/whl/cu118
+"${VENV_DIR}/musetalk/bin/python" -m pip install \
   -r "${MODEL_DIR}/MuseTalk/requirements.txt"
 hf download TMElyralab/MuseTalk \
   --local-dir "${MODEL_DIR}/MuseTalk/models"
