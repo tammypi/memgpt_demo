@@ -28,6 +28,7 @@ let opentalkingEvents = null;
 let chatInProgress = false;
 let avatarSpeechQueued = false;
 let avatarMediaStarted = false;
+let activeDoctorBody = null;
 const stateVideos = {
   idle: "assets/doctor-idle.mp4",
   listening: "assets/doctor-listening.mp4",
@@ -133,12 +134,18 @@ function watchOpenTalkingEvents(sessionId) {
   opentalkingEvents = new EventSource(`${API_BASE}/api/opentalking/sessions/${sessionId}/events`);
   opentalkingEvents.addEventListener("speech.media_started", () => {
     if (!chatInProgress) return;
+    if (activeDoctorBody) activeDoctorBody.textContent = "李医生正在回答…";
     avatarMediaStarted = true;
     portrait.classList.add("answer-video-active");
     setDoctorState("speaking", "warm");
   });
-  opentalkingEvents.addEventListener("speech.ended", () => {
+  opentalkingEvents.addEventListener("speech.ended", event => {
     if (!avatarSpeechQueued || !avatarMediaStarted) return;
+    const payload = JSON.parse(event.data || "{}");
+    if (payload.text && activeDoctorBody) {
+      activeDoctorBody.innerHTML = renderMarkdown(payload.text);
+      activeDoctorBody.classList.remove("typing");
+    }
     chatInProgress = false;
     avatarSpeechQueued = false;
     avatarMediaStarted = false;
@@ -466,19 +473,17 @@ async function sendMessage(message) {
   setDoctorState("thinking", inferExpression(text));
   playStateVideo("thinking");
   const answerBody = addMessage("doctor");
+  activeDoctorBody = answerBody;
+  answerBody.textContent = "正在等待李医生回复…";
   answerBody.classList.add("typing");
   const avatarStream = startAvatarStream();
   let answer = "";
   try {
     const result = await streamChat(text, delta => {
       answer += delta;
-      answerBody.innerHTML = renderMarkdown(answer);
-      messages.scrollTop = messages.scrollHeight;
       feedAvatarStream(avatarStream, delta);
     });
     answer = result.answer || answer;
-    answerBody.innerHTML = renderMarkdown(answer);
-    answerBody.classList.remove("typing");
     finishAvatarStream(avatarStream);
   } catch (error) {
     answerBody.classList.remove("typing");
