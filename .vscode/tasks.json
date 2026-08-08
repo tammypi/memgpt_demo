@@ -7,6 +7,7 @@
       "command": "python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload",
       "options": { "cwd": "${workspaceFolder}" },
       "isBackground": true,
+      "runOptions": { "instanceLimit": 1 },
       "problemMatcher": {
         "owner": "dr-li-backend",
         "pattern": { "regexp": ".*" },
@@ -24,6 +25,7 @@
       "command": "python -m http.server 5173 --directory frontend --bind 0.0.0.0",
       "options": { "cwd": "${workspaceFolder}" },
       "isBackground": true,
+      "runOptions": { "instanceLimit": 1 },
       "problemMatcher": {
         "owner": "dr-li-frontend",
         "pattern": { "regexp": ".*" },
@@ -36,9 +38,27 @@
       "presentation": { "panel": "dedicated", "reveal": "always" }
     },
     {
+      "label": "Dr.Li: 数字人",
+      "type": "shell",
+      "command": "bash scripts/start_opentalking.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "runOptions": { "instanceLimit": 1 },
+      "problemMatcher": {
+        "owner": "dr-li-opentalking",
+        "pattern": { "regexp": ".*" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": ".*Uvicorn running.*"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
       "label": "Dr.Li: 启动前后台",
       "dependsOrder": "parallel",
-      "dependsOn": ["Dr.Li: 后端", "Dr.Li: 前端"],
+      "dependsOn": ["Dr.Li: 后端", "Dr.Li: 前端", "Dr.Li: 数字人"],
       "problemMatcher": []
     }
   ]

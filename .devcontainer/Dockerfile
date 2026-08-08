@@ -3,6 +3,9 @@ FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -17,6 +20,7 @@ RUN apt-get update \
         python3-pip \
         python3-venv \
         sudo \
+        nodejs \
     && ln -s /usr/bin/python3 /usr/local/bin/python \
     && ln -s /usr/bin/pip3 /usr/local/bin/pip \
     && useradd --create-home --shell /bin/bash vscode \

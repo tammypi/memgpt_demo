@@ -4,14 +4,14 @@ import os
 import threading
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from memgpt import MemGpt
-from avatar import LocalAvatarClient, AvatarServiceError, OUTPUT_ROOT
+from opentalking_client import OpenTalkingClient, OpenTalkingError
 
 load_dotenv()
 
@@ -25,17 +25,8 @@ class ChatResponse(BaseModel):
     memory_notice: str | None = None
 
 
-class AvatarRenderRequest(BaseModel):
+class OpenTalkingSpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-
-
-class AvatarJobResponse(BaseModel):
-    job_id: str
-    status: str
-    segments: list[dict]
-    segment_count: int
-    error: str | None = None
-    created_at: float
 
 
 app = FastAPI(title="Dr.Li 有记忆的口腔医生", version="1.0.0")
@@ -48,7 +39,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-app.mount("/avatar-files", StaticFiles(directory=OUTPUT_ROOT), name="avatar-files")
 
 doctor = MemGpt(
     os.getenv("LLM_API_URL", "https://api.moonshot.cn/v1/chat/completions"),
@@ -57,7 +47,7 @@ doctor = MemGpt(
 )
 doctor_lock = threading.Lock()
 
-avatar = LocalAvatarClient()
+opentalking = OpenTalkingClient()
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 
@@ -84,22 +74,42 @@ def health():
         "status": "ok",
         "model": doctor.llm.model_name,
         "configured": bool(doctor.llm.api_key),
-        "avatar_configured": avatar.configured,
+        "avatar_provider": "opentalking-quicktalk",
     }
 
 
-@app.get("/api/avatar/config")
-def avatar_config():
-    return {
-        "enabled": avatar.configured,
-        "provider": "local-cosyvoice-musetalk",
-        "missing_requirements": avatar.missing_requirements,
-        "state_videos": {
-            "idle": state_video_url("AVATAR_IDLE_VIDEO"),
-            "listening": state_video_url("AVATAR_LISTENING_VIDEO"),
-            "thinking": state_video_url("AVATAR_THINKING_VIDEO"),
-        },
-    }
+@app.post("/api/opentalking/session")
+async def opentalking_session():
+    try:
+        session_id = await opentalking.create_session()
+    except (OpenTalkingError, httpx.HTTPError) as error:
+        raise HTTPException(status_code=502, detail=f"OpenTalking 连接失败：{error}") from error
+    return {"session_id": session_id, "base_url": opentalking.base_url}
+
+
+@app.get("/api/opentalking/ice-config")
+async def opentalking_ice_config():
+    try:
+        return await opentalking.ice_config()
+    except (OpenTalkingError, httpx.HTTPError) as error:
+        raise HTTPException(status_code=502, detail=f"OpenTalking ICE 配置失败：{error}") from error
+
+
+@app.post("/api/opentalking/sessions/{session_id}/speak")
+async def opentalking_speak(session_id: str, payload: OpenTalkingSpeakRequest):
+    try:
+        await opentalking.speak(session_id, payload.text)
+    except (OpenTalkingError, httpx.HTTPError) as error:
+        raise HTTPException(status_code=502, detail=f"OpenTalking 合成失败：{error}") from error
+    return {"status": "queued", "session_id": session_id}
+
+
+@app.post("/api/opentalking/sessions/{session_id}/webrtc/offer")
+async def opentalking_offer(session_id: str, payload: dict):
+    try:
+        return await opentalking.offer(session_id, payload)
+    except (OpenTalkingError, httpx.HTTPError) as error:
+        raise HTTPException(status_code=502, detail=f"OpenTalking WebRTC 连接失败：{error}") from error
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -152,24 +162,3 @@ async def chat_websocket(websocket: WebSocket):
             await websocket.close()
         except RuntimeError:
             pass
-
-
-@app.post("/api/avatar/render", response_model=AvatarJobResponse)
-async def avatar_render(payload: AvatarRenderRequest):
-    if not avatar.configured:
-        raise HTTPException(
-            status_code=503,
-            detail=f"本地数字人尚未安装：{', '.join(avatar.missing_requirements)}",
-        )
-    try:
-        return AvatarJobResponse(**avatar.create_job(payload.text.strip()))
-    except (AvatarServiceError, ValueError, TypeError) as error:
-        raise HTTPException(status_code=502, detail=f"数字人渲染失败：{error}") from error
-
-
-@app.get("/api/avatar/jobs/{job_id}", response_model=AvatarJobResponse)
-def avatar_job(job_id: str):
-    try:
-        return AvatarJobResponse(**avatar.get_job(job_id))
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="数字人任务不存在") from error

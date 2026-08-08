@@ -4,7 +4,7 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "runArgs": ["--gpus=all"],
+  "runArgs": ["--gpus=all", "--network=host"],
   "hostRequirements": {
     "gpu": true
   },
@@ -15,7 +15,7 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/memgpt_demo,type=bind,consistency=cached",
   "workspaceFolder": "/workspace/memgpt_demo",
   "updateRemoteUserUID": true,
-  "forwardPorts": [8000, 5173],
+  "forwardPorts": [8000, 5173, 8210, 5280],
   "portsAttributes": {
     "8000": { "label": "Dr.Li 后端 API" },
     "5173": { "label": "Dr.Li 前端", "onAutoForward": "openBrowser" }

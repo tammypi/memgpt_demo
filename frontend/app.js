@@ -2,7 +2,6 @@ const apiOverride = new URLSearchParams(window.location.search).get("api");
 const API_BASE = apiOverride || `${window.location.protocol}//${window.location.hostname}:8000`;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const portrait = document.querySelector("#portrait");
-const stateVideo = document.querySelector("#stateVideo");
 const avatarVideo = document.querySelector("#avatarVideo");
 const statusText = document.querySelector("#statusText");
 const soundWave = document.querySelector("#soundWave");
@@ -17,7 +16,10 @@ let voiceEnabled = true;
 let recognition;
 let avatarEnabled = false;
 let renderSequence = 0;
-let stateVideos = {};
+let opentalkingSession = null;
+let opentalkingPeer = null;
+let opentalkingStream = null;
+let opentalkingConnectPromise = null;
 
 function setDoctorState(state, expression = "warm") {
   portrait.classList.remove("speaking", "listening", "thinking", "expression-warm", "expression-happy", "expression-concerned");
@@ -44,38 +46,11 @@ function stopAvatarVideo() {
 }
 
 function stopStateVideo() {
-  stateVideo.oncanplay = null;
-  stateVideo.onerror = null;
-  stateVideo.pause();
-  stateVideo.removeAttribute("src");
-  stateVideo.dataset.state = "";
-  stateVideo.load();
-  portrait.classList.remove("state-video-active");
+  return;
 }
 
 function playStateVideo(state) {
-  const source = stateVideos[state];
-  if (!source) {
-    stopStateVideo();
-    return;
-  }
-  if (stateVideo.dataset.state === state && stateVideo.src) {
-    stateVideo.play().catch(() => stopStateVideo());
-    return;
-  }
-  stopStateVideo();
-  stateVideo.dataset.state = state;
-  stateVideo.src = source;
-  stateVideo.oncanplay = async () => {
-    stateVideo.oncanplay = null;
-    portrait.classList.add("state-video-active");
-    try {
-      await stateVideo.play();
-    } catch (error) {
-      stopStateVideo();
-    }
-  };
-  stateVideo.onerror = () => stopStateVideo();
+  return;
 }
 
 function avatarSpeechText(text) {
@@ -89,7 +64,8 @@ function avatarSpeechText(text) {
 }
 
 async function createAvatarJob(text) {
-  const response = await fetch(`${API_BASE}/api/avatar/render`, {
+  if (!opentalkingSession) throw new Error("数字人实时会话尚未连接");
+  const response = await fetch(`${API_BASE}/api/opentalking/sessions/${opentalkingSession}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -100,25 +76,90 @@ async function createAvatarJob(text) {
 }
 
 async function playAvatarJob(jobPromise, text, sequence) {
-  let job = await jobPromise;
-  let played = 0;
-  while (sequence === renderSequence) {
-    while (played < job.segments.length) {
-      await playAvatarSegment(job.segments[played].video_url, text, sequence);
-        played += 1;
+  await jobPromise;
+}
+
+async function connectOpenTalking() {
+  const sessionResponse = await fetch(`${API_BASE}/api/opentalking/session`, { method: "POST" });
+  if (!sessionResponse.ok) throw new Error(await sessionResponse.text());
+  opentalkingSession = (await sessionResponse.json()).session_id;
+  let rtcConfig = {};
+  try {
+    const iceResponse = await fetch(`${API_BASE}/api/opentalking/ice-config`);
+    if (iceResponse.ok) rtcConfig = await iceResponse.json();
+  } catch (error) { console.warn("ICE 配置获取失败，使用浏览器默认配置", error); }
+  opentalkingPeer = new RTCPeerConnection(rtcConfig);
+  opentalkingStream = new MediaStream();
+  avatarVideo.srcObject = opentalkingStream;
+  avatarVideo.muted = true;
+  opentalkingPeer.onconnectionstatechange = () => {
+    const state = opentalkingPeer.connectionState;
+    if (state === "connected") {
+      stopStateVideo();
+      setDoctorState("speaking", "warm");
     }
-    if (job.status === "succeeded") break;
-    if (job.status === "failed") throw new Error(job.error || "本地数字人生成失败");
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const poll = await fetch(`${API_BASE}/api/avatar/jobs/${job.job_id}`);
-    job = await poll.json();
-    if (!poll.ok) throw new Error(job.detail || "获取数字人任务失败");
+    if (state === "failed" || state === "closed") {
+      statusText.textContent = "数字人连接失败";
+      portrait.classList.remove("answer-video-active");
+    }
+  };
+  opentalkingPeer.addTransceiver("audio", { direction: "recvonly" });
+  opentalkingPeer.addTransceiver("video", { direction: "recvonly" });
+  opentalkingPeer.ontrack = event => {
+    if (!opentalkingStream.getTracks().some(track => track.id === event.track.id)) {
+      opentalkingStream.addTrack(event.track);
+    }
+    stopStateVideo();
+    portrait.classList.add("answer-video-active");
+    setDoctorState("speaking", "warm");
+    avatarVideo.onloadedmetadata = async () => {
+      try {
+        await avatarVideo.play();
+        avatarVideo.muted = !voiceEnabled;
+        portrait.classList.add("answer-video-active");
+        setDoctorState("speaking", "warm");
+      } catch (error) {
+        console.error("数字人媒体播放失败", error);
+        statusText.textContent = "请点击声音按钮播放数字人";
+      }
+    };
+  };
+  avatarVideo.autoplay = true;
+  avatarVideo.playsInline = true;
+  const offer = await opentalkingPeer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+  await opentalkingPeer.setLocalDescription(offer);
+  if (opentalkingPeer.iceGatheringState !== "complete") {
+    await Promise.race([
+      new Promise(resolve => {
+        const done = () => { opentalkingPeer.removeEventListener("icegatheringstatechange", done); resolve(); };
+        opentalkingPeer.addEventListener("icegatheringstatechange", () => {
+          if (opentalkingPeer.iceGatheringState === "complete") done();
+        });
+      }),
+      new Promise(resolve => setTimeout(resolve, 8000)),
+    ]);
   }
+  const answerResponse = await fetch(`${API_BASE}/api/opentalking/sessions/${opentalkingSession}/webrtc/offer`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sdp: opentalkingPeer.localDescription?.sdp || offer.sdp,
+      type: opentalkingPeer.localDescription?.type || offer.type,
+    }),
+  });
+  if (!answerResponse.ok) throw new Error(await answerResponse.text());
+  await opentalkingPeer.setRemoteDescription(await answerResponse.json());
+  avatarEnabled = true;
 }
 
 function startAvatarStream() {
   const stream = { sequence: ++renderSequence, buffer: "", playback: Promise.resolve() };
-  stopAvatarVideo();
+  if (!avatarVideo.srcObject) stopAvatarVideo();
+  if (!opentalkingSession && !opentalkingConnectPromise) {
+    opentalkingConnectPromise = connectOpenTalking().catch(error => {
+      console.error("OpenTalking 实时会话连接失败", error);
+      avatarEnabled = false;
+    });
+  }
   if (avatarEnabled && voiceEnabled) {
     setDoctorState("thinking", "warm");
     playStateVideo("thinking");
@@ -128,10 +169,18 @@ function startAvatarStream() {
 
 function enqueueAvatarText(stream, rawText) {
   const text = avatarSpeechText(rawText);
-  if (!text || !avatarEnabled || !voiceEnabled || stream.sequence !== renderSequence) return;
-  const jobPromise = createAvatarJob(text);
-  jobPromise.catch(() => {});
-  stream.playback = stream.playback.then(() => playAvatarJob(jobPromise, text, stream.sequence));
+  if (!text || !voiceEnabled || stream.sequence !== renderSequence) return;
+  stream.playback = stream.playback.then(async () => {
+    if (stream.sequence !== renderSequence) return;
+    if (!opentalkingSession) {
+      if (!opentalkingConnectPromise) {
+        opentalkingConnectPromise = connectOpenTalking();
+      }
+      await opentalkingConnectPromise;
+    }
+    if (!avatarEnabled) throw new Error("数字人实时会话尚未连接");
+    await playAvatarJob(createAvatarJob(text), text, stream.sequence);
+  });
 }
 
 function feedAvatarStream(stream, delta) {
@@ -146,14 +195,10 @@ function finishAvatarStream(stream) {
   stream.buffer = "";
   stream.playback.then(() => {
     if (stream.sequence !== renderSequence) return;
-    stopAvatarVideo();
-    setDoctorState("", "warm");
-    playStateVideo("idle");
+    // OpenTalking owns the long-lived WebRTC stream; keep it attached after queuing speak.
   }).catch(error => {
     if (stream.sequence === renderSequence) {
-      stopAvatarVideo();
       setDoctorState("", "concerned");
-      playStateVideo("idle");
       console.error(error);
     }
   });
@@ -408,7 +453,9 @@ micButton.addEventListener("click", () => {
 });
 soundToggle.addEventListener("click", () => {
   voiceEnabled = !voiceEnabled;
+  avatarVideo.muted = !voiceEnabled;
   soundToggle.classList.toggle("active", voiceEnabled);
+  if (voiceEnabled && avatarVideo.srcObject) avatarVideo.play().catch(() => {});
   if (!voiceEnabled) {
     renderSequence += 1;
     stopAvatarVideo();
@@ -417,12 +464,4 @@ soundToggle.addEventListener("click", () => {
   }
 });
 window.addEventListener("beforeunload", () => { stopAvatarVideo(); stopStateVideo(); });
-fetch(`${API_BASE}/api/avatar/config`)
-  .then(response => response.ok ? response.json() : { enabled: false })
-  .then(config => {
-    avatarEnabled = Boolean(config.enabled);
-    stateVideos = config.state_videos || {};
-    playStateVideo("idle");
-  })
-  .catch(() => { avatarEnabled = false; });
 setupRecognition();

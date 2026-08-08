@@ -1,6 +1,6 @@
 # Dr.Li · 有记忆的 AI 口腔医生
 
-这是一个支持长期记忆、文字与语音咨询的 AI 口腔医生演示。Kimi 负责文本生成；CosyVoice 2 和 MuseTalk 1.5 在本机分别完成中文语音与真人口型，不上传人脸或语音，也不产生按次数字人费用。后端保留原项目的当前记忆与 SQLite 长期记忆机制。
+这是一个支持长期记忆、文字与语音咨询的 AI 口腔医生演示。Kimi 负责文本生成，OpenTalking QuickTalk 负责李医生实时音视频。后端保留当前记忆与 SQLite 长期记忆机制。
 
 ![Dr.Li AI 口腔诊室界面](./images/dr-li-interface.png)
 
@@ -40,7 +40,7 @@
 3. 执行任务 `Dr.Li: 启动前后台`。
 4. 打开 <http://localhost:5173>。首次使用语音时允许浏览器访问麦克风。
 
-Dev Container 会把宿主机当前仓库显式绑定挂载到容器内的 `/workspace/memgpt_demo`。容器中的代码改动会立即同步到宿主机；`postCreateCommand` 会在该目录安装依赖，VS Code Task 也会以该目录作为 `${workspaceFolder}` 启动前后端。
+Dev Container 会把宿主机当前仓库显式绑定挂载到容器内的 `/workspace/memgpt_demo`。容器中的代码改动会立即同步到宿主机；`postCreateCommand` 会在该目录安装依赖，VS Code Task 会以该目录作为 `${workspaceFolder}` 启动后端、前端和 OpenTalking 数字人服务。重复执行前先停止已有 task，避免端口冲突。
 
 推荐使用最新版 Chrome 或 Edge。浏览器原生语音识别通常需要联网；医生回答语音不使用浏览器 TTS。
 
@@ -59,48 +59,40 @@ python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 python -m http.server 5173 --directory frontend --bind 0.0.0.0
 ```
 
-医生身份图位于 `frontend/assets/doctor-li.png`。本地模型尚未安装时，页面仍可文字咨询，但不会使用不自然的浏览器 TTS 或 CSS 假口型。
+数字人服务另开终端运行：
 
-## 3.本地数字人
+```bash
+bash scripts/start_opentalking.sh
+```
+
+医生身份图位于 `frontend/assets/doctor-li.png`。OpenTalking 尚未启动时，页面仍可进行文字咨询，但不会播放数字人音视频。
+
+## 3. OpenTalking 数字人
 
 ### 3.1 安装
 
 Dev Container 重建完成后，在容器终端执行：
 
 ```bash
-./scripts/install_local_avatar.sh
+./scripts/install_opentalking.sh
 ```
 
-脚本从官方仓库安装 CosyVoice 2、MuseTalk 1.5 及其模型。模型保存在被 Git 忽略的 `models/`，不会进入镜像或仓库。完成后重启后端，用下面命令检查：
+脚本从官方仓库安装 OpenTalking QuickTalk 及其模型。模型保存在被 Git 忽略的 `models/`，不会进入镜像或仓库。完成后启动数字人 task，用下面命令检查：
 
 ```bash
 nvidia-smi
-curl http://localhost:8000/api/avatar/config
+打开 OpenTalking WebUI：<http://localhost:5280>
 ```
 
 返回的 `enabled` 为 `true` 即表示模型与母版路径齐全。
 
-### 3.2 6GB 显存策略
+### 3.2 运行策略
 
-- CosyVoice 2 0.5B 在 CPU 中惰性加载并常驻，避免占用显存。
-- MuseTalk 1.5 使用 FP16 串行生成，子进程结束即释放显存。
-- Kimi 回答按标点切为最多 70 字的片段；前端轮询任务，新片段生成后立即播放。
-- 同一时间只运行一个数字人任务，避免并发导致 CUDA OOM。
-- 输出位于 `data/avatar/`，仅通过本机 `/avatar-files` 路径提供给前端。
-
-如需克隆指定音色，准备一段清晰的 16 kHz 单人语音，并同时设置：
-
-```env
-AVATAR_TTS_PROMPT_WAV=data/voice/doctor-li.wav
-AVATAR_TTS_PROMPT_TEXT=参考音频中逐字对应的文本
-```
-
-`.env.example` 默认使用 CosyVoice 官方零样本参考音频。正式演示建议换成授权清晰女声；参考文本必须与音频逐字一致。其他路径与分段长度见 `.env.example`。
+- QuickTalk 使用 `custom-Dr-Li-李医生-20260808-060828-741` 资产。
+- 浏览器通过 WebRTC 接收实时音视频，静态照片仅作为连接建立前的底图。
+- 同一时间只运行一个 OpenTalking 数字人服务，避免 GPU 资源竞争。
 
 ### 3.3 接口
 
 - `WS /api/chat/ws`：发送 `{ "message": "..." }` 后，按 `delta`、`done` 或 `error` 消息实时接收回答；上游 LLM 使用 `stream: true`。
-- `GET /api/avatar/config`：本地模型、母版及状态视频配置。
-- `POST /api/avatar/render`：创建本地异步生成任务。
-- `GET /api/avatar/jobs/{job_id}`：返回任务状态和已完成片段。
-- `GET /api/health`：`avatar_configured` 表示本地模型是否齐全。
+- `GET /api/health`：返回后端和数字人提供方状态。
