@@ -1,5 +1,6 @@
 # coding: utf-8
 import json
+import re
 from itertools import islice
 
 from memory.current_memory import CurrentMemory
@@ -140,6 +141,13 @@ class FunctionUtil(object):
             return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
 
     @staticmethod
+    def clean_answer(text):
+        """Remove accidental tool-protocol fragments emitted as plain text."""
+        cleaned = re.sub(r"\$\{[^}]+\}", "", text or "")
+        cleaned = re.sub(r"\s*\{\s*\"keyword\"\s*:\s*\"[^\"]*\"\s*\}\s*", " ", cleaned)
+        return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+    @staticmethod
     def assistant_tool_message(message):
         return {
             "role": "assistant",
@@ -159,7 +167,7 @@ class FunctionUtil(object):
             message = self.llm.complete(messages, tools=self.TOOL_SCHEMAS)
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
-                answer = (message.get("content") or "").strip()
+                answer = self.clean_answer(message.get("content") or "")
                 break
 
             messages.append(self.assistant_tool_message(message))
@@ -195,11 +203,13 @@ class FunctionUtil(object):
             message = self.llm.complete_stream(
                 messages,
                 tools=self.TOOL_SCHEMAS,
-                on_content=lambda part: (round_parts.append(part), on_delta(part)),
+                on_content=round_parts.append,
             )
             tool_calls = message.get("tool_calls") or []
             if not tool_calls:
-                answer = "".join(round_parts).strip()
+                answer = self.clean_answer("".join(round_parts))
+                if answer:
+                    on_delta(answer)
                 break
 
             messages.append(self.assistant_tool_message(message))
