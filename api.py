@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from memgpt import MemGpt
 from opentalking_client import OpenTalkingClient, OpenTalkingError
+from tts import TTSClient, TTSError
 
 load_dotenv()
 
@@ -50,6 +51,7 @@ doctor = MemGpt(
 doctor_lock = threading.Lock()
 
 opentalking = OpenTalkingClient()
+tts = TTSClient(opentalking.base_url)
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 
@@ -76,6 +78,7 @@ def health():
         "status": "ok",
         "model": doctor.llm.model_name,
         "configured": bool(doctor.llm.api_key),
+        "tts_configured": bool(tts.url),
         "avatar_provider": "opentalking-quicktalk",
     }
 
@@ -109,8 +112,9 @@ async def opentalking_events(session_id: str):
 @app.post("/api/opentalking/sessions/{session_id}/speak")
 async def opentalking_speak(session_id: str, payload: OpenTalkingSpeakRequest):
     try:
-        await opentalking.speak(session_id, payload.text)
-    except (OpenTalkingError, httpx.HTTPError) as error:
+        audio = await tts.synthesize(payload.text)
+        await opentalking.speak_flashtalk_audio(session_id, audio)
+    except (TTSError, OpenTalkingError, httpx.HTTPError) as error:
         raise HTTPException(status_code=502, detail=f"OpenTalking 合成失败：{error}") from error
     return {"status": "queued", "session_id": session_id}
 

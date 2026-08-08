@@ -29,6 +29,7 @@ let chatInProgress = false;
 let avatarSpeechQueued = false;
 let avatarMediaStarted = false;
 let activeDoctorBody = null;
+let activeDoctorAnswer = "";
 const stateVideos = {
   idle: "assets/doctor-idle.mp4",
   listening: "assets/doctor-listening.mp4",
@@ -135,11 +136,10 @@ function watchOpenTalkingEvents(sessionId) {
     portrait.classList.add("answer-video-active");
     setDoctorState("speaking", "warm");
   });
-  opentalkingEvents.addEventListener("speech.ended", event => {
+  opentalkingEvents.addEventListener("speech.ended", () => {
     if (!avatarSpeechQueued || !avatarMediaStarted) return;
-    const payload = JSON.parse(event.data || "{}");
-    if (payload.text && activeDoctorBody) {
-      activeDoctorBody.innerHTML = renderMarkdown(payload.text);
+    if (activeDoctorBody && activeDoctorAnswer) {
+      activeDoctorBody.innerHTML = renderMarkdown(activeDoctorAnswer);
       activeDoctorBody.classList.remove("typing");
     }
     chatInProgress = false;
@@ -470,6 +470,7 @@ async function sendMessage(message) {
   playStateVideo("thinking");
   const answerBody = addMessage("doctor");
   activeDoctorBody = answerBody;
+  activeDoctorAnswer = "";
   answerBody.textContent = "正在等待李医生回复…";
   answerBody.classList.add("typing");
   const avatarStream = startAvatarStream();
@@ -480,6 +481,11 @@ async function sendMessage(message) {
       feedAvatarStream(avatarStream, delta);
     });
     answer = result.answer || answer;
+    activeDoctorAnswer = answer;
+    if (!voiceEnabled) {
+      answerBody.innerHTML = renderMarkdown(answer);
+      answerBody.classList.remove("typing");
+    }
     finishAvatarStream(avatarStream);
   } catch (error) {
     answerBody.classList.remove("typing");

@@ -97,3 +97,12 @@ nvidia-smi
 
 - `WS /api/chat/ws`：发送 `{ "message": "..." }` 后，按 `delta`、`done` 或 `error` 消息实时接收回答；上游 LLM 使用 `stream: true`。
 - `GET /api/health`：返回后端和数字人提供方状态。
+
+### 3.4 主后端 TTS
+
+回答文本由 MemGPT 唯一生成，后端随后调用 OpenAI Audio Speech 兼容的 TTS 服务，
+将返回音频统一转换为 16kHz、单声道 WAV，再上传到 OpenTalking 的
+`speak_flashtalk_audio`。该接口只驱动口型，不经过 OpenTalking 的 STT、LLM 或 TTS。
+
+默认直接调用 OpenTalking 的 `/tts/preview`，使用其已配置的 TTS provider，但不会调用
+LLM，音色固定为中文女声。整段回答只合成和提交一次，避免分段播放造成卡顿。

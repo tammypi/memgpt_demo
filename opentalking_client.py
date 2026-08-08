@@ -33,10 +33,11 @@ class OpenTalkingClient:
             raise OpenTalkingError(response.text)
         return session_id
 
-    async def speak(self, session_id: str, text: str) -> None:
+    async def speak_flashtalk_audio(self, session_id: str, audio: bytes) -> None:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                f"{self.base_url}/sessions/{session_id}/speak", json={"text": text}
+                f"{self.base_url}/sessions/{session_id}/speak_flashtalk_audio",
+                files={"file": ("speech.wav", audio, "audio/wav")},
             )
         if response.is_error:
             raise OpenTalkingError(response.text)
